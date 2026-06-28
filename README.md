@@ -43,11 +43,32 @@ npm run dev
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...
    ```
 
-3. Apply the schema in `supabase/migrations/0001_init.sql` (via the Supabase
-   SQL editor or `supabase db push`).
+3. Apply the schema in `supabase/migrations/` (via the Supabase SQL editor or
+   `supabase db push`) — `0001_init.sql` for courses, `0002_roadmap.sql` for
+   the University Roadmap.
 4. Restart the dev server. The data layer (`src/lib/data/index.ts`)
    automatically prefers Supabase when env vars are present and falls back to
    seed data otherwise, so the UI never breaks.
+
+## University Roadmap
+
+A student-owned planning space (global nav → **Roadmap**) for life beyond the
+current courses. All content is **added and edited by the student** in-app —
+because requirements, dates and offers change over time — and persists in the
+browser (`localStorage`) with **no backend required**. Three tabs:
+
+- **My Goals** — target institutions/programmes with the requirements to get in.
+  Captures not just the published minimums but the **competitive marks that make
+  admission safe** (min vs. "safe" APS and per-subject bars), with a tick-off
+  checklist and gap tracking.
+- **Applications** — each institution's opening/closing dates, a link to the
+  online application portal, the prospectus (link **or uploaded file**), and an
+  application status, with deadline countdowns.
+- **Scholarships & Bursaries** — opportunities with what they cover, their
+  requirements, closing dates and apply links.
+
+The same shapes map to `supabase/migrations/0002_roadmap.sql` for when you want
+roadmap data stored server-side per student.
 
 ## Project structure
 
@@ -57,17 +78,21 @@ src/
     dashboard/             Blended Canvas/Brightspace home
     courses/               Course list
     courses/[courseId]/    Course shell + Home/Modules/Assignments/Grades/…
+    roadmap/               University Roadmap: Goals/Applications/Scholarships
     calendar/  inbox/  grades/  account/
   components/
     layout/                GlobalNav, TopBar, CourseSwitcher, CourseNav, AppShell
     dashboard/             CourseCard, ActivityFeed, UpcomingList
-    ui/                    Avatar, Badge, ProgressBar, Widget, PageHeader
+    roadmap/               GoalsBoard, ApplicationsBoard, ScholarshipsBoard, tabs
+    ui/                    Avatar, Badge, Button, Modal, form, ProgressBar, Widget
   lib/
     data/                  Data-access layer (Supabase → seed fallback) + seed
+    roadmap/               Roadmap types, seed, localStorage store, deadlines
     supabase/              Browser/server clients + env detection
     types.ts  nav.ts  utils.ts  itemMeta.tsx
 supabase/
-  migrations/0001_init.sql Schema mirroring the domain model
+  migrations/0001_init.sql     Course/LMS schema
+  migrations/0002_roadmap.sql  University Roadmap schema
 ```
 
 ## Roadmap

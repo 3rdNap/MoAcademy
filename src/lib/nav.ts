@@ -1,5 +1,6 @@
 import {
   Calendar,
+  Compass,
   GraduationCap,
   Home,
   Inbox,
@@ -18,6 +19,7 @@ export interface GlobalNavItem {
 export const globalNav: GlobalNavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Home },
   { label: "Courses", href: "/courses", icon: LayoutGrid },
+  { label: "Roadmap", href: "/roadmap", icon: Compass },
   { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Inbox", href: "/inbox", icon: Inbox, badgeKey: "inbox" },
   { label: "Grades", href: "/grades", icon: GraduationCap },
