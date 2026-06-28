@@ -70,6 +70,26 @@ browser (`localStorage`) with **no backend required**. Three tabs:
 The same shapes map to `supabase/migrations/0002_roadmap.sql` for when you want
 roadmap data stored server-side per student.
 
+## Billing & Registration
+
+A paid registration dashboard (global nav → **Billing**). **There is no free
+plan** — registration is priced **per subject**, and a **volume discount** means
+the total is always less than the subjects added up individually, so the
+effective price per subject falls as you register more.
+
+- A subject catalog (grouped by category) where each subject shows its own
+  per-term price; pick the subjects you want to register.
+- A live summary: subtotal, the bulk-discount tier reached, the amount saved,
+  the total due, and the **effective price per subject** (highlighted).
+- A "How bulk pricing works" tier table that highlights your current tier and
+  nudges you toward the next discount.
+
+Pricing logic is in `src/lib/billing/pricing.ts` (discount tiers
+0/5/10/15/20/25/30%, capped at 7+ subjects). The discount guarantees the
+per-subject rate strictly decreases and the total is less than the sum for two
+or more subjects. The schema is in `supabase/migrations/0003_billing.sql`
+(subjects, registrations, registration_items) with per-student RLS.
+
 ## Project structure
 
 ```
