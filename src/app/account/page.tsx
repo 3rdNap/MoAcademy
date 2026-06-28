@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Widget } from "@/components/ui/Widget";
 import { getCurrentUser } from "@/lib/data";
 import { hasSupabaseEnv } from "@/lib/supabase/env";
+import { ActiveRoleCard } from "@/components/role/ActiveRoleCard";
 
 export const metadata = { title: "Account" };
 
@@ -42,6 +43,9 @@ export default async function AccountPage() {
               {hasSupabaseEnv() ? "Supabase (live)" : "Seed data (demo)"}
             </div>
           </dl>
+          <div className="mt-4">
+            <ActiveRoleCard />
+          </div>
         </section>
 
         <div className="space-y-6 lg:col-span-2">

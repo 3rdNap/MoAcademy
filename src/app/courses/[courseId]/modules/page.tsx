@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { CheckCircle2, Clock, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { NewItemButton } from "@/components/role/NewItemButton";
 import { itemIcon, itemLabel } from "@/lib/itemMeta";
 import { getCourse, getModules } from "@/lib/data";
 import { formatDateTime } from "@/lib/utils";
@@ -22,7 +23,11 @@ export default async function ModulesPage({
 
   return (
     <>
-      <PageHeader title="Modules" subtitle="Work through each module in order." />
+      <PageHeader
+        title="Modules"
+        subtitle="Work through each module in order."
+        action={<NewItemButton label="Module" />}
+      />
 
       <div className="space-y-4">
         {modules.map((m) => (

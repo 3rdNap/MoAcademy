@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
+import { NewItemButton } from "@/components/role/NewItemButton";
 import { itemIcon } from "@/lib/itemMeta";
 import { getAssignments, getCourse } from "@/lib/data";
 import { formatDateTime } from "@/lib/utils";
@@ -44,6 +45,7 @@ export default async function AssignmentsPage({
           (n, a) => n + a.points,
           0,
         )} points total`}
+        action={<NewItemButton label="Assignment" />}
       />
 
       <div className="card divide-y divide-black/5">

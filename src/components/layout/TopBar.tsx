@@ -3,6 +3,7 @@ import { Bell, ChevronDown, Search } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Course, User } from "@/lib/types";
 import { CourseSwitcher } from "./CourseSwitcher";
+import { RoleSwitcher } from "@/components/role/RoleSwitcher";
 
 /**
  * Brightspace-style top bar: brand wordmark, course "waffle" switcher,
@@ -21,6 +22,7 @@ export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
       <CourseSwitcher courses={courses} />
 
       <div className="ml-auto flex items-center gap-1.5">
+        <RoleSwitcher />
         <div className="relative hidden lg:block">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
           <input
