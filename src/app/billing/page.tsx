@@ -1,16 +1,11 @@
-import { PageHeader } from "@/components/ui/PageHeader";
 import { BillingDashboard } from "@/components/billing/BillingDashboard";
+import { getCurrentUser } from "@/lib/data";
 
-export const metadata = { title: "Billing" };
+export const metadata = { title: "Register · Billing" };
 
-export default function BillingPage() {
+export default async function BillingPage() {
+  const user = await getCurrentUser();
   return (
-    <>
-      <PageHeader
-        title="Billing & Registration"
-        subtitle="Choose your subjects — the more you register, the less you pay per subject."
-      />
-      <BillingDashboard />
-    </>
+    <BillingDashboard defaultName={user.name} defaultEmail={user.email} />
   );
 }

@@ -1,17 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   BadgePercent,
   Check,
   CreditCard,
   Info,
+  Receipt,
   Sparkles,
   Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
+import { useLocalCollection } from "@/lib/local-store";
+import { CheckoutModal } from "@/components/billing/CheckoutModal";
 import { subjects, type Subject } from "@/lib/billing/subjects";
 import {
   DISCOUNT_TIERS,
@@ -19,12 +23,27 @@ import {
   formatMoney,
   quote,
 } from "@/lib/billing/pricing";
+import type {
+  Registration,
+  RegistrationLine,
+} from "@/lib/billing/registration";
 
 const STORAGE_KEY = "moacademy.billing.selected";
 
-export function BillingDashboard() {
+export function BillingDashboard({
+  defaultName = "",
+  defaultEmail = "",
+}: {
+  defaultName?: string;
+  defaultEmail?: string;
+}) {
   const [selected, setSelected] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const registrations = useLocalCollection<Registration>(
+    "moacademy.billing.registrations",
+    [],
+  );
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   // Persist the student's selection in the browser.
   useEffect(() => {
@@ -60,6 +79,18 @@ export function BillingDashboard() {
     () => quote(selectedSubjects.map((s) => s.price)),
     [selectedSubjects],
   );
+
+  const lines: RegistrationLine[] = selectedSubjects.map((s) => ({
+    id: s.id,
+    name: s.name,
+    code: s.code,
+    price: s.price,
+  }));
+
+  function handlePaid(reg: Registration) {
+    registrations.add(reg);
+    setSelected([]);
+  }
 
   // Group catalog by category for display.
   const byCategory = useMemo(() => {
@@ -272,7 +303,10 @@ export function BillingDashboard() {
                   </p>
                 )}
 
-                <Button className="mt-4 w-full">
+                <Button
+                  className="mt-4 w-full"
+                  onClick={() => setCheckoutOpen(true)}
+                >
                   <CreditCard className="h-4 w-4" />
                   Pay {formatMoney(q.total)}
                 </Button>
@@ -283,7 +317,28 @@ export function BillingDashboard() {
             )}
           </div>
         </div>
+
+        {registrations.items.length > 0 && (
+          <Link
+            href="/billing/registrations"
+            className="focus-ring mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-surface px-3 py-2 text-sm font-medium text-ink-muted hover:bg-surface-subtle"
+          >
+            <Receipt className="h-4 w-4" />
+            My registrations ({registrations.items.length})
+          </Link>
+        )}
       </aside>
+
+      <CheckoutModal
+        open={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        items={lines}
+        quote={q}
+        registrationsCount={registrations.items.length}
+        defaultName={defaultName}
+        defaultEmail={defaultEmail}
+        onPaid={handlePaid}
+      />
     </div>
   );
 }

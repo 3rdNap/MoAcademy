@@ -90,6 +90,12 @@ per-subject rate strictly decreases and the total is less than the sum for two
 or more subjects. The schema is in `supabase/migrations/0003_billing.sql`
 (subjects, registrations, registration_items) with per-student RLS.
 
+The **Register** tab leads to a **checkout** (payer details + payment method →
+confirmation with an invoice number), and paid registrations are kept under the
+**My Registrations** tab as printable invoices — each capturing the subjects,
+the bulk discount applied, and the total at the time of payment. All of this
+persists in the browser; the same shapes map to the billing migration.
+
 ## Project structure
 
 ```
