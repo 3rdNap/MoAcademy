@@ -11,6 +11,8 @@ import { Widget } from "@/components/ui/Widget";
 import { CourseCard } from "@/components/dashboard/CourseCard";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { UpcomingList } from "@/components/dashboard/UpcomingList";
+import { RoadmapDeadlinesWidget } from "@/components/dashboard/RoadmapDeadlinesWidget";
+import { BillingStatusWidget } from "@/components/dashboard/BillingStatusWidget";
 import {
   getActivity,
   getAnnouncements,
@@ -88,19 +90,32 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Courses grid */}
-        <section className="lg:col-span-2">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-faint">
-              Your courses
+        {/* Courses + planning */}
+        <div className="space-y-6 lg:col-span-2">
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-faint">
+                Your courses
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {courses.map((course) => (
+                <CourseCard key={course.id} course={course} />
+              ))}
+            </div>
+          </section>
+
+          {/* Planning: roadmap deadlines + billing status (from the browser) */}
+          <section>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-faint">
+              Planning
             </h2>
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {courses.map((course) => (
-              <CourseCard key={course.id} course={course} />
-            ))}
-          </div>
-        </section>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <RoadmapDeadlinesWidget />
+              <BillingStatusWidget />
+            </div>
+          </section>
+        </div>
 
         {/* Right column widgets */}
         <div className="space-y-6">
