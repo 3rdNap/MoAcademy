@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { MessageSquare } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -47,6 +49,16 @@ export default async function PeoplePage({
             <div className="flex-1">
               <p className="text-sm font-medium text-ink">{p.name}</p>
             </div>
+            {p.role !== "You" && (
+              <Link
+                href={`/inbox?to=${encodeURIComponent(p.name)}`}
+                className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/10 px-2.5 text-xs font-medium text-ink-muted hover:bg-surface-subtle dark:border-white/10"
+                aria-label={`Message ${p.name}`}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Message
+              </Link>
+            )}
             {p.role === "Instructor" ? (
               <Badge tone="brand">Instructor</Badge>
             ) : p.role === "You" ? (
