@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Paperclip, Pencil, Plus, Send, Trash2, Upload } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -11,8 +11,15 @@ import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import { itemIcon } from "@/lib/itemMeta";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, relativeTime } from "@/lib/utils";
 import type { Assignment, Course, SubmissionStatus } from "@/lib/types";
+
+interface Submission {
+  id: string; // assignment id
+  body: string;
+  fileName?: string;
+  submittedAt: string;
+}
 
 const statusBadge: Record<
   SubmissionStatus,
@@ -59,8 +66,47 @@ export function CourseAssignmentsBoard({
     [],
   );
 
+  const submissions = useLocalCollection<Submission>(
+    `moacademy.submissions.${course.id}`,
+    [],
+  );
+
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [submitFor, setSubmitFor] = useState<Assignment | null>(null);
+  const [subBody, setSubBody] = useState("");
+  const [subFile, setSubFile] = useState<string | undefined>();
+
+  const submissionFor = (aid: string) =>
+    submissions.items.find((s) => s.id === aid);
+
+  function effectiveStatus(a: Assignment): SubmissionStatus {
+    if (a.status === "graded") return "graded";
+    return submissionFor(a.id) ? "submitted" : a.status;
+  }
+
+  function openSubmit(a: Assignment) {
+    const existing = submissionFor(a.id);
+    setSubmitFor(a);
+    setSubBody(existing?.body ?? "");
+    setSubFile(existing?.fileName);
+  }
+
+  function submitWork() {
+    if (!submitFor) return;
+    const existing = submissionFor(submitFor.id);
+    const record: Submission = {
+      id: submitFor.id,
+      body: subBody.trim(),
+      fileName: subFile,
+      submittedAt: new Date().toISOString(),
+    };
+    if (existing) submissions.update(submitFor.id, record);
+    else submissions.add(record);
+    setSubmitFor(null);
+    setSubBody("");
+    setSubFile(undefined);
+  }
 
   const rows = useMemo(() => {
     const combined = [
@@ -135,7 +181,9 @@ export function CourseAssignmentsBoard({
       <div className="card divide-y divide-black/5">
         {rows.map(({ a, local }) => {
           const Icon = itemIcon[a.type];
-          const badge = statusBadge[a.status];
+          const status = effectiveStatus(a);
+          const badge = statusBadge[status];
+          const sub = submissionFor(a.id);
           return (
             <div
               key={a.id}
@@ -156,6 +204,13 @@ export function CourseAssignmentsBoard({
                 <p className="mt-0.5 text-sm text-ink-muted">{a.description}</p>
                 <p className="mt-1 text-xs text-ink-faint">
                   Due {formatDateTime(a.dueAt)} · {a.points} pts
+                  {sub && (
+                    <span className="text-emerald-600">
+                      {" "}
+                      · Submitted {relativeTime(sub.submittedAt)}
+                      {sub.fileName ? ` · ${sub.fileName}` : ""}
+                    </span>
+                  )}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -168,6 +223,15 @@ export function CourseAssignmentsBoard({
                   </p>
                 ) : (
                   <p className="text-sm text-ink-faint">—/{a.points}</p>
+                )}
+                {!teaching && a.status !== "graded" && (
+                  <Button
+                    size="sm"
+                    variant={sub ? "outline" : "primary"}
+                    onClick={() => openSubmit(a)}
+                  >
+                    {sub ? "Resubmit" : "Submit"}
+                  </Button>
                 )}
                 {teaching && local && (
                   <div className="flex gap-1">
@@ -256,6 +320,62 @@ export function CourseAssignmentsBoard({
               placeholder="Instructions for students…"
             />
           </Field>
+        </div>
+      </Modal>
+
+      <Modal
+        open={submitFor !== null}
+        onClose={() => setSubmitFor(null)}
+        title={`Submit · ${submitFor?.title ?? ""}`}
+        description={
+          submitFor
+            ? `Due ${formatDateTime(submitFor.dueAt)} · ${submitFor.points} pts`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setSubmitFor(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submitWork}
+              disabled={!subBody.trim() && !subFile}
+            >
+              <Send className="h-4 w-4" /> Turn in
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Your response">
+            <Textarea
+              value={subBody}
+              onChange={(e) => setSubBody(e.target.value)}
+              placeholder="Type your submission, paste a link, or attach a file below…"
+              className="min-h-[120px]"
+            />
+          </Field>
+          <div>
+            <label className="focus-ring inline-flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-black/15 px-3 py-2 text-sm text-ink-muted hover:bg-surface-subtle">
+              <Upload className="h-4 w-4" />
+              Attach a file
+              <input
+                type="file"
+                className="hidden"
+                onChange={(e) => setSubFile(e.target.files?.[0]?.name)}
+              />
+            </label>
+            {subFile && (
+              <p className="mt-1.5 flex items-center gap-1 text-xs text-ink-faint">
+                <Paperclip className="h-3 w-3" />
+                {subFile}
+              </p>
+            )}
+          </div>
+          <p className="text-xs text-ink-faint">
+            Demo submission — your work is saved in this browser and the status
+            updates to “Submitted”.
+          </p>
         </div>
       </Modal>
     </>

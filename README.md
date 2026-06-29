@@ -140,6 +140,13 @@ items from the modules appear as starter threads; topics and replies persist per
 course in the browser (`moacademy.discussions.*`). Lives in
 `src/components/courses/DiscussionsBoard.tsx`.
 
+## Assignment submissions
+
+On the **Assignments** tab, students can **submit work** (a text response and/or
+an attached file) for any not-yet-graded assignment, and resubmit until it's
+graded. The status flips to **Submitted** with a timestamp. Submissions persist
+per course in the browser (`moacademy.submissions.*`).
+
 ## Project structure
 
 ```
