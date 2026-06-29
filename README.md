@@ -95,12 +95,16 @@ While previewing a teaching role, instructors can **author course content**:
   points, description).
 - **Modules** — create modules (publish/unpublish) and add or remove items
   within them.
+- **Gradebook** — the course **Grades** page is role-aware: students see their
+  own grade table, while instructors get an editable class gradebook (students ×
+  assignments) with auto-saving score cells, per-student totals, and per-
+  assignment class averages.
 
 Authored content is layered on top of the seed data and persists per course in
-the browser (`moacademy.authoring.*`); students see it read-only alongside the
-existing content. The boards live in `src/components/courses/`. Wiring this to
-the Supabase tables in `0001_init.sql` is the path to shared, server-side
-authoring.
+the browser (`moacademy.authoring.*`, `moacademy.gradebook.*`); students see it
+read-only alongside the existing content. The boards live in
+`src/components/courses/`. Wiring this to the Supabase tables in `0001_init.sql`
+is the path to shared, server-side authoring.
 
 ## Billing & Registration
 

@@ -4,22 +4,10 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { getCourse } from "@/lib/data";
 import { currentUser } from "@/lib/data/seed";
+import { roster } from "@/lib/roster";
 import { initialsOf } from "@/lib/utils";
 
 export const metadata = { title: "People" };
-
-// A small representative roster. In a live deployment this comes from the
-// enrollments table.
-const roster = [
-  "Thabo Nkosi",
-  "Aisha Patel",
-  "Liam O'Connor",
-  "Zinhle Mthembu",
-  "Noah Williams",
-  "Fatima Hassan",
-  "Ethan Brooks",
-  "Lerato Sithole",
-];
 
 export default async function PeoplePage({
   params,
@@ -33,7 +21,7 @@ export default async function PeoplePage({
   const people = [
     { name: course.instructor, role: "Instructor" as const },
     { name: currentUser.name, role: "You" as const },
-    ...roster.map((name) => ({ name, role: "Student" as const })),
+    ...roster.map((s) => ({ name: s.name, role: "Student" as const })),
   ];
 
   return (
