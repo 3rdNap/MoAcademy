@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { CourseNav } from "@/components/layout/CourseNav";
+import { CourseInstructorBar } from "@/components/role/CourseInstructorBar";
 import { Badge } from "@/components/ui/Badge";
 import { getCourse } from "@/lib/data";
 
@@ -42,6 +43,8 @@ export default async function CourseLayout({
           {course.code} · {course.term} · {course.instructor}
         </p>
       </div>
+
+      <CourseInstructorBar published={course.published} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[200px_minmax(0,1fr)]">
         <aside>

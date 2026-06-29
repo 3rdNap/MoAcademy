@@ -13,6 +13,7 @@ import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { UpcomingList } from "@/components/dashboard/UpcomingList";
 import { RoadmapDeadlinesWidget } from "@/components/dashboard/RoadmapDeadlinesWidget";
 import { BillingStatusWidget } from "@/components/dashboard/BillingStatusWidget";
+import { RolePreviewBanner } from "@/components/role/RolePreviewBanner";
 import {
   getActivity,
   getAnnouncements,
@@ -46,6 +47,7 @@ export default async function DashboardPage() {
 
   return (
     <>
+      <RolePreviewBanner />
       <PageHeader
         title={`${greeting()}, ${user.name.split(" ")[0]}`}
         subtitle={`You're enrolled in ${courses.length} courses this term · ${formatDate(

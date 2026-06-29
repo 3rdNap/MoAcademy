@@ -70,6 +70,38 @@ browser (`localStorage`) with **no backend required**. Three tabs:
 The same shapes map to `supabase/migrations/0002_roadmap.sql` for when you want
 roadmap data stored server-side per student.
 
+## Roles & access (student vs. instructor)
+
+A **"Viewing as"** switcher in the top bar previews the app as a **Student**,
+**Instructor**, or **Admin** (Canvas-style Student View). The active role is held
+in a client `RoleProvider` (persisted in the browser) and gates teaching UI:
+
+- **Course pages** show an **Instructor tools** bar (add content, gradebook,
+  people, student view, publish) for teaching roles.
+- **Modules** and **Assignments** show **+ Add** actions for instructors.
+- The **dashboard** shows a teaching-preview banner; the **account** page shows
+  the role currently being previewed.
+
+This is the UI foundation for role-aware access; it maps directly onto the
+`role` on the authenticated user once Supabase Auth is connected (`profiles.role`
+already exists in `0001_init.sql`). Gates live in
+`src/components/role/` (`RoleProvider`, `RoleSwitcher`, `InstructorOnly`, …).
+
+### Instructor authoring
+
+While previewing a teaching role, instructors can **author course content**:
+
+- **Assignments** — create / edit / delete assignments (title, type, due date,
+  points, description).
+- **Modules** — create modules (publish/unpublish) and add or remove items
+  within them.
+
+Authored content is layered on top of the seed data and persists per course in
+the browser (`moacademy.authoring.*`); students see it read-only alongside the
+existing content. The boards live in `src/components/courses/`. Wiring this to
+the Supabase tables in `0001_init.sql` is the path to shared, server-side
+authoring.
+
 ## Billing & Registration
 
 A paid registration dashboard (global nav → **Billing**). **There is no free
