@@ -147,6 +147,14 @@ an attached file) for any not-yet-graded assignment, and resubmit until it's
 graded. The status flips to **Submitted** with a timestamp. Submissions persist
 per course in the browser (`moacademy.submissions.*`).
 
+## Inbox
+
+The **Inbox** is interactive: open a conversation to read the thread and **reply**
+(chat-style bubbles), and **compose** a new message with recipient suggestions
+(course instructors + classmates). Opening a conversation clears its unread dot;
+sent conversations and replies persist in the browser (`moacademy.inbox.*`).
+Lives in `src/components/inbox/InboxBoard.tsx`.
+
 ## Project structure
 
 ```
