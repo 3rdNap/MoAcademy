@@ -120,7 +120,7 @@ export function ScholarshipsBoard() {
                 </div>
 
                 {s.coverage && (
-                  <p className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  <p className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200">
                     <Award className="h-4 w-4 shrink-0" />
                     {s.coverage}
                   </p>

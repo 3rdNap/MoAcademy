@@ -56,11 +56,13 @@ export function BillingStatusWidget() {
               </p>
               <p className="mt-1 text-xs text-ink-muted">Subjects registered</p>
             </div>
-            <div className="rounded-lg bg-emerald-50 p-3">
-              <p className="text-2xl font-bold leading-none text-emerald-700">
+            <div className="rounded-lg bg-emerald-50 p-3 dark:bg-emerald-500/15">
+              <p className="text-2xl font-bold leading-none text-emerald-700 dark:text-emerald-300">
                 {formatMoney(totalPaid)}
               </p>
-              <p className="mt-1 text-xs text-emerald-700/80">Total paid</p>
+              <p className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/80">
+                Total paid
+              </p>
             </div>
           </div>
           {latest && (

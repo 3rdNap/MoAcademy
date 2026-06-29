@@ -409,7 +409,7 @@ function TargetCard({
       </div>
 
       {target.notes && (
-        <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
           {target.notes}
         </p>
       )}
