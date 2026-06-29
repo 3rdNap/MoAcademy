@@ -155,6 +155,15 @@ The **Inbox** is interactive: open a conversation to read the thread and **reply
 sent conversations and replies persist in the browser (`moacademy.inbox.*`).
 Lives in `src/components/inbox/InboxBoard.tsx`.
 
+## Notifications
+
+The top-bar **bell** opens a notifications panel that aggregates what needs
+attention: unread inbox messages, roadmap application/scholarship deadlines
+closing within 14 days, assignments due within 7 days, and recently posted
+grades — each linking to the right page. The badge count is computed from the
+same browser data the rest of the app uses. Lives in
+`src/components/notifications/NotificationBell.tsx`.
+
 ## Project structure
 
 ```

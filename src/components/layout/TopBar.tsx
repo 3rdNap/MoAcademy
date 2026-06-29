@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { Bell, ChevronDown, Search } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Course, User } from "@/lib/types";
 import { CourseSwitcher } from "./CourseSwitcher";
 import { RoleSwitcher } from "@/components/role/RoleSwitcher";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 /**
  * Brightspace-style top bar: brand wordmark, course "waffle" switcher,
@@ -33,13 +34,7 @@ export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
           />
         </div>
 
-        <button
-          className="focus-ring relative flex h-9 w-9 items-center justify-center rounded-full text-ink-muted hover:bg-surface-sunken"
-          aria-label="Notifications"
-        >
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-surface" />
-        </button>
+        <NotificationBell />
 
         <Link
           href="/account"
