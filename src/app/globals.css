@@ -4,6 +4,27 @@
 
 :root {
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Light theme — semantic tokens as RGB channels for Tailwind opacity. */
+  --ink: 31 39 51; /* #1f2733 */
+  --ink-muted: 91 101 115; /* #5b6573 */
+  --ink-faint: 139 148 163; /* #8b94a3 */
+  --surface: 255 255 255; /* cards */
+  --surface-subtle: 246 247 251; /* page background */
+  --surface-sunken: 238 240 246; /* inputs / hover */
+  --scrollbar: #cbd2e0;
+  color-scheme: light;
+}
+
+.dark {
+  --ink: 226 232 240; /* slate-200 */
+  --ink-muted: 148 163 184; /* slate-400 */
+  --ink-faint: 100 116 139; /* slate-500 */
+  --surface: 30 41 59; /* slate-800 cards */
+  --surface-subtle: 15 23 42; /* slate-900 page bg */
+  --surface-sunken: 51 65 85; /* slate-700 inputs / hover */
+  --scrollbar: #475569;
+  color-scheme: dark;
 }
 
 @layer base {
@@ -17,23 +38,23 @@
   /* Slim, unobtrusive scrollbars to match the LMS chrome. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #cbd2e0 transparent;
+    scrollbar-color: var(--scrollbar) transparent;
   }
   *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   *::-webkit-scrollbar-thumb {
-    background: #cbd2e0;
+    background: var(--scrollbar);
     border-radius: 9999px;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-xl border border-black/5 bg-surface shadow-card;
+    @apply rounded-xl border border-black/5 bg-surface shadow-card dark:border-white/10;
   }
   .focus-ring {
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-surface;
   }
 }

@@ -23,8 +23,14 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Set the theme class before paint to avoid a flash of the wrong theme.
+  const themeScript = `(function(){try{var t=localStorage.getItem('moacademy.theme');var d=t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}})();`;
+
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
         <AppShell>{children}</AppShell>
       </body>

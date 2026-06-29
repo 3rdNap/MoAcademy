@@ -173,6 +173,15 @@ inline alongside coursework. Personal events persist in the browser
 (`moacademy.calendar.events`). Lives in
 `src/components/calendar/CalendarBoard.tsx`.
 
+## Light / dark theme
+
+A **light/dark theme toggle** (sun/moon in the top bar) switches the whole app.
+Semantic color tokens (`ink`, `surface`) are CSS variables with a `.dark`
+override (`globals.css`), so components adapt automatically. The choice persists
+in the browser (`moacademy.theme`) and an inline script in the root layout
+applies it before first paint to avoid a flash; unset follows the OS preference.
+Toggle in `src/components/layout/ThemeToggle.tsx`.
+
 ## Pinned courses
 
 Star any course (top-left of its card) to **pin** it; pinned courses appear in a

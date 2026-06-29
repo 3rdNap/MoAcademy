@@ -4,6 +4,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import type { Course, User } from "@/lib/types";
 import { CourseSwitcher } from "./CourseSwitcher";
 import { GlobalSearch } from "./GlobalSearch";
+import { ThemeToggle } from "./ThemeToggle";
 import { RoleSwitcher } from "@/components/role/RoleSwitcher";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 
@@ -27,6 +28,7 @@ export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
         <RoleSwitcher />
         <GlobalSearch />
 
+        <ThemeToggle />
         <NotificationBell />
 
         <Link
