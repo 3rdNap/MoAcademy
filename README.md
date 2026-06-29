@@ -95,12 +95,16 @@ While previewing a teaching role, instructors can **author course content**:
   points, description).
 - **Modules** — create modules (publish/unpublish) and add or remove items
   within them.
+- **Gradebook** — the course **Grades** page is role-aware: students see their
+  own grade table, while instructors get an editable class gradebook (students ×
+  assignments) with auto-saving score cells, per-student totals, and per-
+  assignment class averages.
 
 Authored content is layered on top of the seed data and persists per course in
-the browser (`moacademy.authoring.*`); students see it read-only alongside the
-existing content. The boards live in `src/components/courses/`. Wiring this to
-the Supabase tables in `0001_init.sql` is the path to shared, server-side
-authoring.
+the browser (`moacademy.authoring.*`, `moacademy.gradebook.*`); students see it
+read-only alongside the existing content. The boards live in
+`src/components/courses/`. Wiring this to the Supabase tables in `0001_init.sql`
+is the path to shared, server-side authoring.
 
 ## Billing & Registration
 
@@ -127,6 +131,21 @@ confirmation with an invoice number), and paid registrations are kept under the
 **My Registrations** tab as printable invoices — each capturing the subjects,
 the bulk discount applied, and the total at the time of payment. All of this
 persists in the browser; the same shapes map to the billing migration.
+
+## Discussions
+
+The course **Discussions** tab is interactive: open any thread to read and
+**post replies**, delete your own, and **start new topics**. Seed discussion
+items from the modules appear as starter threads; topics and replies persist per
+course in the browser (`moacademy.discussions.*`). Lives in
+`src/components/courses/DiscussionsBoard.tsx`.
+
+## Assignment submissions
+
+On the **Assignments** tab, students can **submit work** (a text response and/or
+an attached file) for any not-yet-graded assignment, and resubmit until it's
+graded. The status flips to **Submitted** with a timestamp. Submissions persist
+per course in the browser (`moacademy.submissions.*`).
 
 ## Project structure
 
