@@ -132,6 +132,14 @@ confirmation with an invoice number), and paid registrations are kept under the
 the bulk discount applied, and the total at the time of payment. All of this
 persists in the browser; the same shapes map to the billing migration.
 
+## Discussions
+
+The course **Discussions** tab is interactive: open any thread to read and
+**post replies**, delete your own, and **start new topics**. Seed discussion
+items from the modules appear as starter threads; topics and replies persist per
+course in the browser (`moacademy.discussions.*`). Lives in
+`src/components/courses/DiscussionsBoard.tsx`.
+
 ## Project structure
 
 ```
