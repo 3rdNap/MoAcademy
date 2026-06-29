@@ -2,15 +2,26 @@ import { Globe, Mail, Shield } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/data";
 import { hasSupabaseEnv } from "@/lib/supabase/env";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ActiveRoleCard } from "@/components/role/ActiveRoleCard";
 import { AccountSettings } from "@/components/account/AccountSettings";
+import { SignOutButton } from "@/components/auth/SignOutButton";
 
 export const metadata = { title: "Account" };
 
 export default async function AccountPage() {
   const user = await getCurrentUser();
+
+  // Determine real auth state when Supabase is configured.
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user: authUser },
+  } = supabase
+    ? await supabase.auth.getUser()
+    : { data: { user: null } };
 
   return (
     <>
@@ -42,6 +53,21 @@ export default async function AccountPage() {
           <div className="mt-4">
             <ActiveRoleCard />
           </div>
+
+          {hasSupabaseEnv() && (
+            <div className="mt-4">
+              {authUser ? (
+                <SignOutButton />
+              ) : (
+                <Link
+                  href="/login"
+                  className="focus-ring flex w-full items-center justify-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+                >
+                  Sign in
+                </Link>
+              )}
+            </div>
+          )}
         </section>
 
         <div className="lg:col-span-2">
