@@ -155,6 +155,14 @@ The **Inbox** is interactive: open a conversation to read the thread and **reply
 sent conversations and replies persist in the browser (`moacademy.inbox.*`).
 Lives in `src/components/inbox/InboxBoard.tsx`.
 
+## Account settings
+
+The **Account** page persists your preferences: an editable **display name** and
+**time zone**, plus **notification toggles** (announcements, grades, due-date
+reminders, discussion replies). Changes save to the browser as you make them
+(`moacademy.account.*`) with a brief "Saved" confirmation. Lives in
+`src/components/account/AccountSettings.tsx`.
+
 ## Calendar
 
 The **Calendar** agenda merges course deadlines (seed) with your own **personal
