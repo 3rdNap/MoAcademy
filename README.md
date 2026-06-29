@@ -155,6 +155,13 @@ The **Inbox** is interactive: open a conversation to read the thread and **reply
 sent conversations and replies persist in the browser (`moacademy.inbox.*`).
 Lives in `src/components/inbox/InboxBoard.tsx`.
 
+## Global search
+
+The top-bar search box is a live, keyboard-driven search across **courses,
+assignments, content items, and pages**. Results appear as you type (matching
+title or code/subtitle), **Enter** opens the top hit, and **Esc** closes. Lives
+in `src/components/layout/GlobalSearch.tsx`.
+
 ## Notifications
 
 The top-bar **bell** opens a notifications panel that aggregates what needs

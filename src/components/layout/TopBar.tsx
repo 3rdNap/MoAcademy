@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Course, User } from "@/lib/types";
 import { CourseSwitcher } from "./CourseSwitcher";
+import { GlobalSearch } from "./GlobalSearch";
 import { RoleSwitcher } from "@/components/role/RoleSwitcher";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 
@@ -24,15 +25,7 @@ export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
 
       <div className="ml-auto flex items-center gap-1.5">
         <RoleSwitcher />
-        <div className="relative hidden lg:block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
-          <input
-            type="search"
-            placeholder="Search courses, assignments…"
-            className="focus-ring h-9 w-64 rounded-full border border-black/10 bg-surface-subtle pl-9 pr-3 text-sm text-ink placeholder:text-ink-faint"
-            aria-label="Search"
-          />
-        </div>
+        <GlobalSearch />
 
         <NotificationBell />
 
