@@ -173,6 +173,13 @@ inline alongside coursework. Personal events persist in the browser
 (`moacademy.calendar.events`). Lives in
 `src/components/calendar/CalendarBoard.tsx`.
 
+## Pinned courses
+
+Star any course (top-left of its card) to **pin** it; pinned courses appear in a
+quick-access **Pinned** strip at the top of the dashboard. Pins persist in the
+browser (`moacademy.pinnedCourses`). See `src/components/dashboard/CourseStar.tsx`
+and `PinnedCourses.tsx`.
+
 ## Global search
 
 The top-bar search box is a live, keyboard-driven search across **courses,

@@ -13,6 +13,7 @@ import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { UpcomingList } from "@/components/dashboard/UpcomingList";
 import { RoadmapDeadlinesWidget } from "@/components/dashboard/RoadmapDeadlinesWidget";
 import { BillingStatusWidget } from "@/components/dashboard/BillingStatusWidget";
+import { PinnedCourses } from "@/components/dashboard/PinnedCourses";
 import { RolePreviewBanner } from "@/components/role/RolePreviewBanner";
 import {
   getActivity,
@@ -90,6 +91,8 @@ export default async function DashboardPage() {
           tone="text-amber-600"
         />
       </div>
+
+      <PinnedCourses courses={courses} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Courses + planning */}
