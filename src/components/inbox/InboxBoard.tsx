@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
   Inbox as InboxIcon,
@@ -73,6 +73,19 @@ export function InboxBoard({
   const [composeOpen, setComposeOpen] = useState(false);
   const [draft, setDraft] = useState({ to: "", subject: "", body: "" });
   const [composer, setComposer] = useState("");
+
+  // Deep link from the People page: /inbox?to=Name opens the composer.
+  useEffect(() => {
+    try {
+      const to = new URLSearchParams(window.location.search).get("to");
+      if (to) {
+        setDraft((d) => ({ ...d, to }));
+        setComposeOpen(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const conversations: Conversation[] = useMemo(
     () => [
