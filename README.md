@@ -155,6 +155,14 @@ The **Inbox** is interactive: open a conversation to read the thread and **reply
 sent conversations and replies persist in the browser (`moacademy.inbox.*`).
 Lives in `src/components/inbox/InboxBoard.tsx`.
 
+## Calendar
+
+The **Calendar** agenda merges course deadlines (seed) with your own **personal
+events** — add, edit, and delete events (title, date/time, type) that appear
+inline alongside coursework. Personal events persist in the browser
+(`moacademy.calendar.events`). Lives in
+`src/components/calendar/CalendarBoard.tsx`.
+
 ## Global search
 
 The top-bar search box is a live, keyboard-driven search across **courses,
