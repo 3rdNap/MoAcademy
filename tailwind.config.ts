@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -28,15 +29,17 @@ const config: Config = {
           DEFAULT: "#10b6a3",
           fg: "#0b7a6e",
         },
+        // Semantic tokens are CSS variables so the app can switch between light
+        // and dark themes (see globals.css :root / .dark).
         ink: {
-          DEFAULT: "#1f2733",
-          muted: "#5b6573",
-          faint: "#8b94a3",
+          DEFAULT: "rgb(var(--ink) / <alpha-value>)",
+          muted: "rgb(var(--ink-muted) / <alpha-value>)",
+          faint: "rgb(var(--ink-faint) / <alpha-value>)",
         },
         surface: {
-          DEFAULT: "#ffffff",
-          subtle: "#f6f7fb",
-          sunken: "#eef0f6",
+          DEFAULT: "rgb(var(--surface) / <alpha-value>)",
+          subtle: "rgb(var(--surface-subtle) / <alpha-value>)",
+          sunken: "rgb(var(--surface-sunken) / <alpha-value>)",
         },
       },
       fontFamily: {

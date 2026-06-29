@@ -10,7 +10,7 @@ export function RolePreviewBanner() {
   if (!hydrated || !canTeach(role)) return null;
 
   return (
-    <div className="mb-5 flex items-center gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+    <div className="mb-5 flex items-center gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-900 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
       <GraduationCap className="h-5 w-5 shrink-0 text-brand-600" />
       <p>
         You&apos;re previewing the{" "}

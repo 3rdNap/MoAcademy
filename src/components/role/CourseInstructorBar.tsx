@@ -23,8 +23,8 @@ export function CourseInstructorBar({ published }: { published: boolean }) {
 
   return (
     <InstructorOnly>
-      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-brand-100 bg-brand-50/70 px-3 py-2.5">
-        <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-brand-700">
+      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-brand-100 bg-brand-50/70 px-3 py-2.5 dark:border-brand-500/20 dark:bg-brand-500/10">
+        <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
           Instructor tools
         </span>
         {tools.map((t) => {
@@ -32,7 +32,7 @@ export function CourseInstructorBar({ published }: { published: boolean }) {
           return (
             <button
               key={t.label}
-              className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-white"
+              className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:bg-surface-subtle"
             >
               <Icon className="h-3.5 w-3.5 text-brand-600" />
               {t.label}
