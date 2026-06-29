@@ -108,7 +108,7 @@ export function BillingDashboard({
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       {/* Catalog */}
       <div>
-        <div className="mb-4 flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900">
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-900 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             Registration is <span className="font-semibold">per subject</span> —
@@ -134,7 +134,7 @@ export function BillingDashboard({
                     className={cn(
                       "focus-ring flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
                       isOn
-                        ? "border-brand-500 bg-brand-50/60 ring-1 ring-brand-200"
+                        ? "border-brand-500 bg-brand-50/60 ring-1 ring-brand-200 dark:bg-brand-500/10 dark:ring-brand-500/30"
                         : "border-black/10 bg-surface hover:bg-surface-subtle",
                     )}
                   >
@@ -191,7 +191,7 @@ export function BillingDashboard({
                 return (
                   <tr
                     key={t.min}
-                    className={active ? "bg-brand-50/60" : undefined}
+                    className={active ? "bg-brand-50/60 dark:bg-brand-500/10" : undefined}
                   >
                     <td className="px-4 py-2 text-ink">
                       {t.max === null ? `${t.min}+ subjects` : t.max === 1 ? "1 subject" : `${t.min} subjects`}
@@ -280,7 +280,7 @@ export function BillingDashboard({
                   </span>
                 </div>
 
-                <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200">
                   <p className="font-semibold">
                     {formatMoney(q.effectivePerSubject)} per subject
                   </p>
