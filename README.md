@@ -95,6 +95,8 @@ While previewing a teaching role, instructors can **author course content**:
   points, description).
 - **Modules** — create modules (publish/unpublish) and add or remove items
   within them.
+- **Announcements** — instructors can post / edit / delete course announcements,
+  merged with the existing ones and tagged "Posted by you".
 - **Gradebook** — the course **Grades** page is role-aware: students see their
   own grade table, while instructors get an editable class gradebook (students ×
   assignments) with auto-saving score cells, per-student totals, and per-
