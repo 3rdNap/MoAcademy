@@ -3,6 +3,7 @@ import { BookOpen, Megaphone, Users } from "lucide-react";
 import type { Course } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { CourseStar } from "./CourseStar";
 
 /**
  * Canvas-style course card: colored banner header + quick links footer,
@@ -10,7 +11,8 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
  */
 export function CourseCard({ course }: { course: Course }) {
   return (
-    <article className="card group overflow-hidden transition-shadow hover:shadow-cardhover">
+    <article className="card group relative overflow-hidden transition-shadow hover:shadow-cardhover">
+      <CourseStar courseId={course.id} />
       <Link
         href={`/courses/${course.id}`}
         className="block h-24 w-full"
