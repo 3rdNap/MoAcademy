@@ -40,10 +40,21 @@ In **Authentication → Providers**, enable **Email** (and turn off "Confirm ema
 during local testing for speed, or keep it on for production). You can also
 enable OAuth providers (Google, GitHub) here later.
 
-## 5. Add the auth UI (sign-in / sign-up / sign-out)
+## 5. Auth UI (already built in)
 
-The browser/server Supabase clients already exist
-(`src/lib/supabase/client.ts`, `server.ts`). Add these files:
+The sign-in / sign-up / sign-out UI is included:
+
+- **`/login`** and **`/signup`** (`src/app/login`, `src/app/signup`) — backed by
+  `src/components/auth/AuthCard.tsx` (email + password; signup also captures a
+  full name and student/instructor role into user metadata, which the
+  `0004_auth.sql` trigger writes to `profiles`).
+- **Sign out** — `src/components/auth/SignOutButton.tsx`, shown on the Account
+  page when you're signed in (otherwise a "Sign in" link appears).
+
+Just enable the Email provider (step 4) and the flows work. The reference
+snippets below show what they do under the hood.
+
+### Reference: the same flow by hand
 
 ### `src/app/login/page.tsx`
 
