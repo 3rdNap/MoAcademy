@@ -33,6 +33,11 @@ export function isParent(role: Role): boolean {
   return role === "parent";
 }
 
+/** Whether a role is an administrator. */
+export function isAdmin(role: Role): boolean {
+  return role === "admin";
+}
+
 export function isRole(value: unknown): value is Role {
   return typeof value === "string" && (ROLES as string[]).includes(value);
 }
