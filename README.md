@@ -203,9 +203,16 @@ Toggle in `src/components/layout/ThemeToggle.tsx`.
 ## Study Guides
 
 A library (global nav → **Study Guides**) of PDF study guides, each with a
-**thumbnail**. Add a guide with a title, subject and description, then **upload a
-PDF and a thumbnail image** (or paste links); guides without a thumbnail get a
-generated gradient cover. Guide metadata persists in the browser (`moacademy.studyGuides`). **Uploads go to
+**thumbnail** and tagged to a **subject**.
+
+- **Admins upload** (add / edit / delete) — students get a read-only view.
+- Each guide is tagged to a **subject** from the registerable catalog.
+- **Students only see guides for the subjects they've registered** (from their
+  Billing registrations), grouped by subject; if they haven't registered any,
+  the tab points them to Billing.
+
+Upload a PDF and a thumbnail image (or paste links); guides without a thumbnail
+get a generated gradient cover. Guide metadata persists in the browser (`moacademy.studyGuides`). **Uploads go to
 Supabase Storage** when you're signed in and a public `study-guides` bucket
 exists (`src/lib/supabase/storage.ts`) — no size limit; otherwise they fall back
 to a size-guarded browser copy. The metadata table, RLS, and bucket setup are in
