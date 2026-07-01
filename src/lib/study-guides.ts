@@ -40,7 +40,7 @@ export const seedGuides: StudyGuide[] = [
   {
     id: "sg_essay",
     title: "Essay Structure Guide",
-    subject: "Academic Writing",
+    subject: "English",
     description:
       "Thesis, topic sentences, evidence and signposting — a template for argumentative essays.",
     createdAt: "2026-06-24T10:00:00Z",
