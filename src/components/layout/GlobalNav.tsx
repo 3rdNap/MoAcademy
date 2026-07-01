@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { globalNav } from "@/lib/nav";
+import { Users } from "lucide-react";
+import { globalNav, type GlobalNavItem } from "@/lib/nav";
+import { useRole } from "@/components/role/RoleProvider";
+import { isParent } from "@/lib/role";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,6 +14,18 @@ import { cn } from "@/lib/utils";
  */
 export function GlobalNav() {
   const pathname = usePathname();
+  const { role, hydrated } = useRole();
+
+  // Parents get a "Family" entry (surfaced after hydration to avoid mismatch).
+  const familyItem: GlobalNavItem = {
+    label: "Family",
+    href: "/family",
+    icon: Users,
+  };
+  const items: GlobalNavItem[] =
+    hydrated && isParent(role)
+      ? [globalNav[0], familyItem, ...globalNav.slice(1)]
+      : globalNav;
 
   const isActive = (href: string) =>
     href === "/dashboard"
@@ -32,7 +47,7 @@ export function GlobalNav() {
           Mo
         </Link>
         <ul className="flex flex-1 flex-col gap-1">
-          {globalNav.map((item) => {
+          {items.map((item) => {
             const active = isActive(item.href);
             const Icon = item.icon;
             return (
@@ -61,7 +76,7 @@ export function GlobalNav() {
         aria-label="Global"
         className="fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-black/10 bg-brand-950 px-2 py-1 text-white md:hidden"
       >
-        {globalNav.map((item) => {
+        {items.map((item) => {
           const active = isActive(item.href);
           const Icon = item.icon;
           return (

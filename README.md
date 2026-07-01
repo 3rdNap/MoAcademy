@@ -70,10 +70,20 @@ browser (`localStorage`) with **no backend required**. Three tabs:
 The same shapes map to `supabase/migrations/0002_roadmap.sql` for when you want
 roadmap data stored server-side per student.
 
-## Roles & access (student vs. instructor)
+## Roles & access (student · instructor · admin · parent)
 
 A **"Viewing as"** switcher in the top bar previews the app as a **Student**,
-**Instructor**, or **Admin** (Canvas-style Student View). The active role is held
+**Instructor**, **Admin**, or **Parent** (Canvas-style Student View).
+
+### Parent / Family dashboard
+
+Previewing as **Parent** reveals a **Family** entry in the global nav (and a
+banner on the dashboard). The Family page (`/family`) lets a guardian pick a
+child and see that child's **overall average**, each **course with its current
+grade + progress**, **upcoming deadlines**, **recent grades**, and
+**announcements**. Demo children reuse the seed academics with a per-child grade
+offset; in production this maps to guardian↔student links. See
+`src/components/family/FamilyDashboard.tsx` and `src/lib/family.ts`. The active role is held
 in a client `RoleProvider` (persisted in the browser) and gates teaching UI:
 
 - **Course pages** show an **Instructor tools** bar (add content, gradebook,

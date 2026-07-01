@@ -49,6 +49,11 @@ export function daysUntil(iso: string, now: Date = new Date()): number {
   return Math.ceil(ms / 86400000);
 }
 
+/** Clamp a percentage to the 0–100 range. */
+export function clampPct(pct: number): number {
+  return Math.max(0, Math.min(100, pct));
+}
+
 /** Letter grade from a 0–100 percentage. */
 export function letterGrade(pct: number): string {
   if (pct >= 93) return "A";
