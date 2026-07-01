@@ -2,7 +2,7 @@
 // These types are shared by the seed-data layer and the (optional) Supabase
 // data source so pages can stay agnostic about where data comes from.
 
-export type Role = "student" | "instructor" | "admin";
+export type Role = "student" | "instructor" | "admin" | "parent";
 
 export interface User {
   id: string;

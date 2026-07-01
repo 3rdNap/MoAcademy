@@ -7,23 +7,30 @@ import type { Role } from "./types";
 
 export const ROLE_KEY = "moacademy.role";
 
-export const ROLES: Role[] = ["student", "instructor", "admin"];
+export const ROLES: Role[] = ["student", "instructor", "admin", "parent"];
 
 export const roleLabel: Record<Role, string> = {
   student: "Student",
   instructor: "Instructor",
   admin: "Admin",
+  parent: "Parent",
 };
 
 export const roleBlurb: Record<Role, string> = {
   student: "Learning view — your courses, grades and planning.",
   instructor: "Teaching view — manage course content and assess students.",
   admin: "Admin view — full management across the institution.",
+  parent: "Family view — follow your child's grades and deadlines.",
 };
 
 /** Whether a role has teaching/management capabilities. */
 export function canTeach(role: Role): boolean {
   return role === "instructor" || role === "admin";
+}
+
+/** Whether a role is a parent/guardian. */
+export function isParent(role: Role): boolean {
+  return role === "parent";
 }
 
 export function isRole(value: unknown): value is Role {
