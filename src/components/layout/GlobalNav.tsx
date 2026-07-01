@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users } from "lucide-react";
+import { ShieldCheck, Users } from "lucide-react";
 import { globalNav, type GlobalNavItem } from "@/lib/nav";
 import { useRole } from "@/components/role/RoleProvider";
-import { isParent } from "@/lib/role";
+import { isAdmin, isParent } from "@/lib/role";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,16 +16,16 @@ export function GlobalNav() {
   const pathname = usePathname();
   const { role, hydrated } = useRole();
 
-  // Parents get a "Family" entry (surfaced after hydration to avoid mismatch).
-  const familyItem: GlobalNavItem = {
-    label: "Family",
-    href: "/family",
-    icon: Users,
-  };
-  const items: GlobalNavItem[] =
-    hydrated && isParent(role)
+  // Role-specific entries (surfaced after hydration to avoid a mismatch).
+  const familyItem: GlobalNavItem = { label: "Family", href: "/family", icon: Users };
+  const adminItem: GlobalNavItem = { label: "Admin", href: "/admin", icon: ShieldCheck };
+  const items: GlobalNavItem[] = !hydrated
+    ? globalNav
+    : isParent(role)
       ? [globalNav[0], familyItem, ...globalNav.slice(1)]
-      : globalNav;
+      : isAdmin(role)
+        ? [globalNav[0], adminItem, ...globalNav.slice(1)]
+        : globalNav;
 
   const isActive = (href: string) =>
     href === "/dashboard"

@@ -75,6 +75,14 @@ roadmap data stored server-side per student.
 A **"Viewing as"** switcher in the top bar previews the app as a **Student**,
 **Instructor**, **Admin**, or **Parent** (Canvas-style Student View).
 
+### Admin console
+
+Previewing as **Admin** reveals an **Admin** entry in the global nav (and a
+dashboard banner). The console (`/admin`) shows institution-wide stats (students,
+instructors, courses, assignments, average progress), a courses table
+(instructor, credits, published status), and a people list. See
+`src/components/admin/AdminConsole.tsx`.
+
 ### Parent / Family dashboard
 
 Previewing as **Parent** reveals a **Family** entry in the global nav (and a
