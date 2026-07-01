@@ -197,10 +197,12 @@ Toggle in `src/components/layout/ThemeToggle.tsx`.
 A library (global nav → **Study Guides**) of PDF study guides, each with a
 **thumbnail**. Add a guide with a title, subject and description, then **upload a
 PDF and a thumbnail image** (or paste links); guides without a thumbnail get a
-generated gradient cover. Guides persist in the browser
-(`moacademy.studyGuides`). The production path — metadata table + a
-`study-guides` Storage bucket — is in `supabase/migrations/0005_study_guides.sql`.
-See `src/components/study/StudyGuidesBoard.tsx`.
+generated gradient cover. Guide metadata persists in the browser (`moacademy.studyGuides`). **Uploads go to
+Supabase Storage** when you're signed in and a public `study-guides` bucket
+exists (`src/lib/supabase/storage.ts`) — no size limit; otherwise they fall back
+to a size-guarded browser copy. The metadata table, RLS, and bucket setup are in
+`supabase/migrations/0005_study_guides.sql`. See
+`src/components/study/StudyGuidesBoard.tsx`.
 
 ## Pinned courses
 
