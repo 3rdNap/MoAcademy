@@ -6,6 +6,7 @@ import {
   Home,
   Inbox,
   LayoutGrid,
+  Library,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ export interface GlobalNavItem {
 export const globalNav: GlobalNavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Home },
   { label: "Courses", href: "/courses", icon: LayoutGrid },
+  { label: "Study Guides", href: "/study-guides", icon: Library },
   { label: "Roadmap", href: "/roadmap", icon: Compass },
   { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Inbox", href: "/inbox", icon: Inbox, badgeKey: "inbox" },

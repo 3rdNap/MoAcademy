@@ -192,6 +192,16 @@ in the browser (`moacademy.theme`) and an inline script in the root layout
 applies it before first paint to avoid a flash; unset follows the OS preference.
 Toggle in `src/components/layout/ThemeToggle.tsx`.
 
+## Study Guides
+
+A library (global nav → **Study Guides**) of PDF study guides, each with a
+**thumbnail**. Add a guide with a title, subject and description, then **upload a
+PDF and a thumbnail image** (or paste links); guides without a thumbnail get a
+generated gradient cover. Guides persist in the browser
+(`moacademy.studyGuides`). The production path — metadata table + a
+`study-guides` Storage bucket — is in `supabase/migrations/0005_study_guides.sql`.
+See `src/components/study/StudyGuidesBoard.tsx`.
+
 ## Pinned courses
 
 Star any course (top-left of its card) to **pin** it; pinned courses appear in a
