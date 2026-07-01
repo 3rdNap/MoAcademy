@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { useLocalCollection, newId } from "@/lib/local-store";
+import { uploadStudyFile } from "@/lib/supabase/storage";
 import { seedGuides, type StudyGuide } from "@/lib/study-guides";
 import { formatDate } from "@/lib/utils";
 
@@ -67,10 +68,23 @@ export function StudyGuidesBoard() {
     setOpen(true);
   }
 
-  function onPdf(file?: File) {
+  async function onPdf(file?: File) {
     if (!file) return;
+    setNote("Uploading…");
+    // Prefer Supabase Storage (no size limit); fall back to the browser.
+    const url = await uploadStudyFile(file, "pdf");
+    if (url) {
+      setDraft((d) => ({
+        ...d,
+        pdfUrl: url,
+        pdfFileName: file.name,
+        pdfData: undefined,
+      }));
+      setNote(`Uploaded ${file.name}`);
+      return;
+    }
     if (file.size > MAX_PDF) {
-      setNote("That PDF is over 3 MB — paste a link instead for larger files.");
+      setNote("That PDF is over 3 MB — connect Storage or paste a link for large files.");
       return;
     }
     const reader = new FileReader();
@@ -85,10 +99,15 @@ export function StudyGuidesBoard() {
     setNote(`Attached ${file.name}`);
   }
 
-  function onThumb(file?: File) {
+  async function onThumb(file?: File) {
     if (!file) return;
+    const url = await uploadStudyFile(file, "thumb");
+    if (url) {
+      setDraft((d) => ({ ...d, thumbUrl: url, thumbData: undefined }));
+      return;
+    }
     if (file.size > MAX_THUMB) {
-      setNote("That image is over 1.5 MB — try a smaller thumbnail.");
+      setNote("That image is over 1.5 MB — connect Storage or try a smaller thumbnail.");
       return;
     }
     const reader = new FileReader();
