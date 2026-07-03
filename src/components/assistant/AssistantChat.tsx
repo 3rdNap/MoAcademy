@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Globe, SendHorizonal, Sparkles, Trash2 } from "lucide-react";
+import { Globe, SendHorizonal, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { useLocalCollection } from "@/lib/local-store";
@@ -138,9 +138,7 @@ export function AssistantChat() {
       >
         {empty ? (
           <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-600 dark:bg-brand-500/15">
-              <Sparkles className="h-7 w-7" />
-            </div>
+            <MoMark className="h-14 w-14 rounded-2xl text-xl" />
             <div>
               <p className="text-lg font-semibold text-ink">Hi, I&apos;m Mo 👋</p>
               <p className="mx-auto mt-1 max-w-md text-sm text-ink-muted">
@@ -214,7 +212,8 @@ export function AssistantChat() {
         </Button>
       </form>
       <p className="mt-1.5 text-center text-[11px] text-ink-faint">
-        Mo can make mistakes. Double-check important facts.
+        Mo is powered by Anthropic&apos;s Claude and can make mistakes —
+        double-check important facts.
         {webSearch ? " Web search is on." : " Web search is off."}
       </p>
     </div>
@@ -235,9 +234,7 @@ function Bubble({ message, busy }: { message: ChatMessage; busy: boolean }) {
   return (
     <div className="flex justify-start">
       <div className="flex max-w-[90%] gap-3">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-600 dark:bg-brand-500/15">
-          <Sparkles className="h-4 w-4" />
-        </div>
+        <MoMark className="mt-0.5 h-8 w-8 shrink-0 rounded-lg text-[11px]" />
         <div className="min-w-0 rounded-2xl rounded-tl-md bg-surface px-4 py-2.5 text-sm text-ink shadow-sm ring-1 ring-black/5 dark:ring-white/5">
           {message.content ? (
             renderMarkdown(message.content)
@@ -255,5 +252,17 @@ function Bubble({ message, busy }: { message: ChatMessage; busy: boolean }) {
 function Dot() {
   return (
     <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-ink-faint" />
+  );
+}
+
+/** Mo's avatar — the same "Mo" wordmark badge as the MoAcademy logo. */
+function MoMark({ className }: { className?: string }) {
+  return (
+    <div
+      aria-hidden
+      className={`flex items-center justify-center bg-brand-950 font-black tracking-tight text-white ${className ?? ""}`}
+    >
+      Mo
+    </div>
   );
 }
