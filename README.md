@@ -219,6 +219,29 @@ to a size-guarded browser copy. The metadata table, RLS, and bucket setup are in
 `supabase/migrations/0005_study_guides.sql`. See
 `src/components/study/StudyGuidesBoard.tsx`.
 
+## AI Study Assistant
+
+An in-app AI tutor, **Mo** (global nav → **Assistant**), powered by **Claude**
+(`claude-opus-4-8` by default). Mo is **grounded in the student's own content** —
+their courses, upcoming deadlines and registered-subject study guides are woven
+into the system prompt — while also being a capable general tutor that can pull
+in **live external information via web search** (toggle the globe icon). It
+explains concepts, quizzes the student, summarises study guides and helps plan
+work, and is instructed to *guide* students through graded work rather than hand
+over answers.
+
+- Server route `src/app/api/chat/route.ts` streams the response and reads
+  `ANTHROPIC_API_KEY` **server-side only** — the key never reaches the browser.
+  Web search uses the server-side `web_search_20260209` tool; adaptive thinking
+  is on by default.
+- Without a key the tab still renders and explains how to enable it (no crash).
+  Set `ANTHROPIC_API_KEY` (and optionally `ASSISTANT_MODEL=claude-fable-5`, which
+  auto-enables server-side refusal fallbacks) — see `.env.example`.
+- The chat UI (`src/components/assistant/AssistantChat.tsx`) streams tokens as
+  they arrive, renders Markdown safely (no `dangerouslySetInnerHTML`, see
+  `markdown.tsx`), and sends a small client-side grounding snapshot (registered
+  subjects + available study-guide titles) with each request.
+
 ## Pinned courses
 
 Star any course (top-left of its card) to **pin** it; pinned courses appear in a
