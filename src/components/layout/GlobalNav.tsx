@@ -9,9 +9,6 @@ import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin, isParent } from "@/lib/role";
 import { cn } from "@/lib/utils";
 
-/** How many items fit comfortably in the mobile tab bar before "More". */
-const MOBILE_PRIMARY = 4;
-
 /**
  * Canvas-style vertical global navigation rail (desktop). Collapses to a
  * bottom tab bar on mobile, where only the primary items are shown and the
@@ -104,8 +101,13 @@ function MobileBar({
   moreOpen: boolean;
   setMoreOpen: (open: boolean) => void;
 }) {
-  const primary = items.slice(0, MOBILE_PRIMARY);
-  const overflow = items.slice(MOBILE_PRIMARY);
+  // Role entries (Family/Admin) take a bar slot too — they're that role's
+  // main destination.
+  const primary = items.filter(
+    (item) =>
+      item.onMobileBar || item.href === "/family" || item.href === "/admin",
+  );
+  const overflow = items.filter((item) => !primary.includes(item));
   const overflowActive = overflow.some((item) => isActive(item.href));
 
   return (
