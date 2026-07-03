@@ -7,6 +7,7 @@ import {
   Inbox,
   LayoutGrid,
   Library,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ export const globalNav: GlobalNavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Home },
   { label: "Courses", href: "/courses", icon: LayoutGrid },
   { label: "Study Guides", href: "/study-guides", icon: Library },
+  { label: "Assistant", href: "/assistant", icon: Sparkles },
   { label: "Roadmap", href: "/roadmap", icon: Compass },
   { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Inbox", href: "/inbox", icon: Inbox, badgeKey: "inbox" },
