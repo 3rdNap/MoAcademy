@@ -17,7 +17,9 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         <GlobalNav />
         <div className="md:pl-[84px]">
           <TopBar user={user} courses={courses} />
-          <main className="mx-auto w-full max-w-[1480px] px-4 pb-24 pt-6 md:px-6 md:pb-10 lg:px-8">
+          {/* Full-bleed content: no width cap, just a small even gutter on
+              both sides so pages fill the screen. */}
+          <main className="w-full px-4 pb-24 pt-6 md:px-6 md:pb-10">
             {children}
           </main>
         </div>
