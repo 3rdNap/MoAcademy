@@ -22,13 +22,14 @@ export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
         aria-label="MoAcademy home"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/mo-mark.png" alt="mo" className="h-6 w-auto" />
-        <span aria-hidden className="h-7 w-px bg-ink/60" />
-        <span className="flex flex-col justify-center gap-0.5">
-          <span className="text-sm font-black leading-none tracking-tight text-ink">
+        <img src="/mo-mark.png" alt="mo" className="h-7 w-auto" />
+        <span aria-hidden className="h-8 w-px bg-ink/60" />
+        {/* ACADEMY dominates; the slogan is much smaller, as in the artwork */}
+        <span className="flex flex-col justify-center gap-[3px]">
+          <span className="text-lg font-black leading-none tracking-tight text-ink">
             ACADEMY
           </span>
-          <span className="text-[8px] font-medium uppercase leading-none tracking-[0.28em] text-ink-muted">
+          <span className="text-[7px] font-medium uppercase leading-none tracking-[0.3em] text-ink-muted">
             Smart Learning
           </span>
         </span>
