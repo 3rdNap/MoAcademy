@@ -23,6 +23,7 @@ import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import { uploadStudyFile } from "@/lib/supabase/storage";
+import { fetchRemoteRegisteredSubjects } from "@/lib/billing/registration-db";
 import {
   addRemoteGuide,
   fetchRemoteGuides,
@@ -78,10 +79,15 @@ export function StudyGuidesBoard() {
   // saved on this device before signing in remain visible alongside it.
   const [remote, setRemote] = useState<StudyGuide[] | null>(null);
   const [signedIn, setSignedIn] = useState(false);
+  const [remoteSubjects, setRemoteSubjects] = useState<string[]>([]);
   useEffect(() => {
     let alive = true;
     fetchRemoteGuides().then((g) => alive && setRemote(g));
     getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
+    // Registrations made on other devices also unlock guides here.
+    fetchRemoteRegisteredSubjects().then(
+      (s) => alive && s && setRemoteSubjects(s),
+    );
     return () => {
       alive = false;
     };
@@ -103,10 +109,11 @@ export function StudyGuidesBoard() {
   );
   const registeredSubjects = useMemo(
     () =>
-      new Set(
-        registrations.items.flatMap((r) => r.items.map((i) => i.name)),
-      ),
-    [registrations.items],
+      new Set([
+        ...registrations.items.flatMap((r) => r.items.map((i) => i.name)),
+        ...remoteSubjects,
+      ]),
+    [registrations.items, remoteSubjects],
   );
 
   const [open, setOpen] = useState(false);
