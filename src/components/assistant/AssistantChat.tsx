@@ -17,12 +17,45 @@ const SUGGESTIONS = [
   "Summarise one of my study guides",
 ];
 
+/** Where the conversation persists between visits. */
+const CHAT_KEY = "moacademy.assistant.chat";
+/** Keep the stored transcript bounded (and the model context affordable). */
+const MAX_STORED = 40;
+
 export function AssistantChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [webSearch, setWebSearch] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Restore the previous conversation once on mount, then persist changes.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CHAT_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as ChatMessage[];
+        if (Array.isArray(saved)) {
+          setMessages(saved.filter((m) => m && m.content && m.role));
+        }
+      }
+    } catch {
+      // Corrupt/unavailable storage — start fresh.
+    }
+    setHydrated(true);
+  }, []);
+  useEffect(() => {
+    if (!hydrated || busy) return;
+    try {
+      window.localStorage.setItem(
+        CHAT_KEY,
+        JSON.stringify(messages.slice(-MAX_STORED)),
+      );
+    } catch {
+      // Quota exceeded — keep the session in memory only.
+    }
+  }, [messages, hydrated, busy]);
 
   // Client-owned grounding: registered subjects + available study guides.
   const registrations = useLocalCollection<Registration>(
