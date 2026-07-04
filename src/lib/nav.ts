@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import {
   Calendar,
   Compass,
@@ -7,14 +8,19 @@ import {
   Inbox,
   LayoutGrid,
   Library,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react";
+import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
+
+/** Lucide icons and the logo-mark icon both fit this shape. */
+export type NavIcon =
+  | LucideIcon
+  | ComponentType<{ className?: string; strokeWidth?: number }>;
 
 export interface GlobalNavItem {
   label: string;
   href: string;
-  icon: LucideIcon;
+  icon: NavIcon;
   badgeKey?: "inbox";
   /** Shown directly on the mobile bottom bar; the rest go in the More sheet. */
   onMobileBar?: boolean;
@@ -25,7 +31,7 @@ export const globalNav: GlobalNavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Home, onMobileBar: true },
   { label: "Courses", href: "/courses", icon: LayoutGrid, onMobileBar: true },
   { label: "Study Guides", href: "/study-guides", icon: Library },
-  { label: "Assistant", href: "/assistant", icon: Sparkles, onMobileBar: true },
+  { label: "Assistant", href: "/assistant", icon: MoMarkIcon, onMobileBar: true },
   { label: "Roadmap", href: "/roadmap", icon: Compass, onMobileBar: true },
   { label: "Calendar", href: "/calendar", icon: Calendar, onMobileBar: true },
   { label: "Inbox", href: "/inbox", icon: Inbox, badgeKey: "inbox" },
