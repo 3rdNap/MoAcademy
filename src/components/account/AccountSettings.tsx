@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Bell, Check, User as UserIcon } from "lucide-react";
 import { Widget } from "@/components/ui/Widget";
+import { Button } from "@/components/ui/Button";
 import { Label } from "@/components/ui/form";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const PROFILE_KEY = "moacademy.account.profile";
@@ -47,6 +50,42 @@ export function AccountSettings({
   const [hydrated, setHydrated] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
   const skipFirstSave = useRef(true);
+
+  // When signed in, the full name is editable and saved to the profiles row
+  // (the name the whole app — and instructors' gradebooks — will show).
+  const router = useRouter();
+  const [userId, setUserId] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState(fullName);
+  const [profileState, setProfileState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    let alive = true;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (alive && user) setUserId(user.id);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function saveProfile() {
+    const supabase = createSupabaseBrowserClient();
+    const name = profileName.trim();
+    if (!supabase || !userId || !name) return;
+    setProfileState("saving");
+    const { error } = await supabase
+      .from("profiles")
+      .update({ full_name: name })
+      .eq("id", userId);
+    if (error) {
+      setProfileState("error");
+      return;
+    }
+    setProfileState("saved");
+    router.refresh(); // top bar + pages pick up the new name
+    setTimeout(() => setProfileState("idle"), 1800);
+  }
 
   useEffect(() => {
     try {
@@ -94,7 +133,43 @@ export function AccountSettings({
         action={<SavedTag show={showSaved} />}
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <ReadOnlyField label="Full name" value={fullName} />
+          {userId ? (
+            <div>
+              <Label htmlFor="profileName">Full name</Label>
+              <div className="flex gap-2">
+                <input
+                  id="profileName"
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  className="focus-ring w-full rounded-lg border border-black/10 bg-surface px-3 py-2 text-sm text-ink"
+                />
+                <Button
+                  size="sm"
+                  className="h-auto shrink-0"
+                  onClick={saveProfile}
+                  disabled={
+                    profileState === "saving" ||
+                    !profileName.trim() ||
+                    profileName.trim() === fullName
+                  }
+                >
+                  {profileState === "saving" ? "Saving…" : "Save"}
+                </Button>
+              </div>
+              {profileState === "saved" && (
+                <p className="mt-1 text-xs font-medium text-emerald-600">
+                  Saved to your profile.
+                </p>
+              )}
+              {profileState === "error" && (
+                <p className="mt-1 text-xs text-rose-600">
+                  Couldn&apos;t save — please try again.
+                </p>
+              )}
+            </div>
+          ) : (
+            <ReadOnlyField label="Full name" value={fullName} />
+          )}
           <div>
             <Label htmlFor="displayName">Display name</Label>
             <input
