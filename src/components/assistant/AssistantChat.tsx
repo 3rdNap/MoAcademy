@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Globe, SendHorizonal, Trash2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Globe, SendHorizonal, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { useLocalCollection } from "@/lib/local-store";
@@ -17,6 +18,15 @@ const SUGGESTIONS = [
   "Summarise one of my study guides",
 ];
 
+function courseSuggestions(course: string): string[] {
+  return [
+    `Explain a concept from ${course} I'm stuck on`,
+    `Quiz me on ${course}`,
+    `Help me plan my ${course} work`,
+    `What are the key topics in ${course}?`,
+  ];
+}
+
 /** Where the conversation persists between visits. */
 const CHAT_KEY = "moacademy.assistant.chat";
 /** Keep the stored transcript bounded (and the model context affordable). */
@@ -29,6 +39,15 @@ export function AssistantChat() {
   const [webSearch, setWebSearch] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+
+  // "Ask Mo about this course" arrives as ?course=…; keep it as a dismissible
+  // topic that's sent along with every message.
+  const searchParams = useSearchParams();
+  const [courseTopic, setCourseTopic] = useState<string | null>(null);
+  useEffect(() => {
+    const c = searchParams.get("course");
+    if (c) setCourseTopic(c);
+  }, [searchParams]);
 
   // Restore the previous conversation once on mount, then persist changes.
   useEffect(() => {
@@ -103,7 +122,11 @@ export function AssistantChat() {
         body: JSON.stringify({
           messages: nextMessages.slice(0, -1), // drop the empty placeholder
           webSearch,
-          context: { subjects, guides: guideTitles },
+          context: {
+            subjects,
+            guides: guideTitles,
+            currentCourse: courseTopic ?? undefined,
+          },
         }),
       });
 
@@ -182,7 +205,7 @@ export function AssistantChat() {
               </p>
             </div>
             <div className="flex max-w-lg flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((s) => (
+              {(courseTopic ? courseSuggestions(courseTopic) : SUGGESTIONS).map((s) => (
                 <button
                   key={s}
                   onClick={() => send(s)}
@@ -202,6 +225,19 @@ export function AssistantChat() {
         <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-500/10">
           {error}
         </p>
+      )}
+
+      {courseTopic && (
+        <div className="mt-2 flex items-center gap-2 self-start rounded-full border border-brand-200 bg-brand-50 py-1 pl-3 pr-1.5 text-xs font-medium text-brand-900 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
+          Talking about <span className="font-semibold">{courseTopic}</span>
+          <button
+            onClick={() => setCourseTopic(null)}
+            aria-label="Stop talking about this course"
+            className="focus-ring flex h-5 w-5 items-center justify-center rounded-full hover:bg-brand-100 dark:hover:bg-brand-500/20"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
       )}
 
       <form
