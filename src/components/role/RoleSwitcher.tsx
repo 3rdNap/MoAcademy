@@ -33,8 +33,8 @@ export function RoleSwitcher() {
         title="Switch the view you're previewing"
       >
         <Eye className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Viewing as</span>
-        <span className="font-semibold text-ink">
+        <span className="hidden md:inline">Viewing as</span>
+        <span className="hidden font-semibold text-ink sm:inline">
           {hydrated ? roleLabel[role] : roleLabel.student}
         </span>
         <ChevronDown className="h-3.5 w-3.5" />
