@@ -138,7 +138,7 @@ export function AssistantChat() {
       >
         {empty ? (
           <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
-            <MoMark className="h-14 w-14 rounded-2xl text-xl" />
+            <MoMark className="h-14 w-14 rounded-2xl p-2" />
             <div>
               <p className="text-lg font-semibold text-ink">Hi, I&apos;m Mo 👋</p>
               <p className="mx-auto mt-1 max-w-md text-sm text-ink-muted">
@@ -234,7 +234,7 @@ function Bubble({ message, busy }: { message: ChatMessage; busy: boolean }) {
   return (
     <div className="flex justify-start">
       <div className="flex max-w-[90%] gap-3">
-        <MoMark className="mt-0.5 h-8 w-8 shrink-0 rounded-lg text-[11px]" />
+        <MoMark className="mt-0.5 h-8 w-8 shrink-0 rounded-lg" />
         <div className="min-w-0 rounded-2xl rounded-tl-md bg-surface px-4 py-2.5 text-sm text-ink shadow-sm ring-1 ring-black/5 dark:ring-white/5">
           {message.content ? (
             renderMarkdown(message.content)
@@ -255,14 +255,15 @@ function Dot() {
   );
 }
 
-/** Mo's avatar — the same "Mo" wordmark badge as the MoAcademy logo. */
+/** Mo's avatar — the blue "mo" mark from the MoAcademy logo. */
 function MoMark({ className }: { className?: string }) {
   return (
     <div
       aria-hidden
-      className={`flex items-center justify-center bg-brand-950 font-black tracking-tight text-white ${className ?? ""}`}
+      className={`flex items-center justify-center bg-white p-1 ring-1 ring-black/10 dark:ring-white/10 ${className ?? ""}`}
     >
-      Mo
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/mo-mark.png" alt="" className="h-full w-full object-contain" />
     </div>
   );
 }

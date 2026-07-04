@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Label, Select } from "@/components/ui/form";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -64,8 +63,9 @@ export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
     <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center">
       <div className="card p-6">
         <div className="mb-5 flex flex-col items-center text-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-white">
-            <GraduationCap className="h-6 w-6" />
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white p-2 ring-1 ring-black/10 dark:ring-white/10">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/mo-mark.png" alt="MoAcademy" className="h-full w-full object-contain" />
           </span>
           <h1 className="mt-3 text-xl font-bold text-ink">
             {isSignup ? "Create your account" : "Welcome back"}

@@ -47,7 +47,7 @@ export function UpcomingList({
             >
               <span
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white"
-                style={{ backgroundColor: course?.color ?? "#5d3fea" }}
+                style={{ backgroundColor: course?.color ?? "#0284c7" }}
               >
                 <Icon className="h-4.5 w-4.5" />
               </span>
