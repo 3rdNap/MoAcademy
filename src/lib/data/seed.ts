@@ -19,7 +19,7 @@ export const currentUser: User = {
   name: "Morgan Sefako",
   email: "morgan.sefako@moacademy.edu",
   role: "student",
-  avatarColor: "#5d3fea",
+  avatarColor: "#0284c7",
   initials: "MS",
 };
 

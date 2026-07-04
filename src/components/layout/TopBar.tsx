@@ -17,9 +17,19 @@ export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-black/5 bg-surface/90 px-4 backdrop-blur md:pl-6">
       <Link
         href="/dashboard"
-        className="focus-ring flex items-center gap-2 text-lg font-extrabold tracking-tight text-ink"
+        className="focus-ring flex items-center gap-2"
+        aria-label="MoAcademy home"
       >
-        <span className="text-brand-600">Mo</span>Academy
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/mo-mark.png" alt="mo" className="h-6 w-auto" />
+        <span className="hidden flex-col justify-center sm:flex">
+          <span className="text-sm font-black leading-none tracking-tight text-ink">
+            ACADEMY
+          </span>
+          <span className="text-[8px] font-medium uppercase tracking-[0.28em] text-ink-faint">
+            Smart Learning
+          </span>
+        </span>
       </Link>
 
       <CourseSwitcher courses={courses} />

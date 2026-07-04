@@ -16,7 +16,7 @@ export const children: Child[] = [
     id: "ch_lerato",
     name: "Lerato Dlamini",
     grade: "Grade 11",
-    avatarColor: "#5d3fea",
+    avatarColor: "#0284c7",
     gradeDelta: 0,
   },
   {

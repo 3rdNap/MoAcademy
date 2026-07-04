@@ -158,7 +158,7 @@ function Person({ name, role }: { name: string; role: "Instructor" | "Student" }
     <div className="flex items-center gap-3 p-3">
       <Avatar
         initials={initialsOf(name)}
-        color={role === "Instructor" ? "#5d3fea" : "#8b94a3"}
+        color={role === "Instructor" ? "#0284c7" : "#8b94a3"}
         size={32}
       />
       <p className="flex-1 text-sm font-medium text-ink">{name}</p>

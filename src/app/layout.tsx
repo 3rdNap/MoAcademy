@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     template: "%s · MoAcademy",
   },
   description:
-    "MoAcademy — a modern learning management system inspired by Brightspace and Canvas.",
+    "MoAcademy — Smart Learning. A modern learning management system inspired by Brightspace and Canvas.",
 };
 
 export default function RootLayout({

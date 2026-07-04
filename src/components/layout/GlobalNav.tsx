@@ -49,10 +49,11 @@ export function GlobalNav() {
       >
         <Link
           href="/dashboard"
-          className="focus-ring mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-lg font-black tracking-tight"
+          className="focus-ring mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-white p-1.5"
           aria-label="MoAcademy home"
         >
-          Mo
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/mo-mark.png" alt="" className="h-full w-full object-contain" />
         </Link>
         <ul className="flex flex-1 flex-col gap-1">
           {items.map((item) => {

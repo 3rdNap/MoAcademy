@@ -1,7 +1,11 @@
+<p align="center">
+  <img src="public/logo-lockup.png" alt="MoAcademy — Smart Learning" width="440" />
+</p>
+
 # MoAcademy
 
-A modern **Learning Management System** built with Next.js, TypeScript, Tailwind
-CSS, and Supabase. The interface blends the strongest patterns from
+**Smart Learning.** A modern **Learning Management System** built with Next.js,
+TypeScript, Tailwind CSS, and Supabase. The interface blends the strongest patterns from
 **Canvas** and **D2L Brightspace**:
 
 - **Canvas-style global navigation rail** (Dashboard, Courses, Calendar, Inbox,

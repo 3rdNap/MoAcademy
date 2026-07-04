@@ -10,20 +10,20 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // MoAcademy brand — a deep indigo/violet that blends Canvas's
-        // confident accent with Brightspace's calm, professional palette.
+        // MoAcademy brand — the sky blue of the "mo" logo mark (#38b6ff),
+        // scaled from tint to a deep navy for the nav rail.
         brand: {
-          50: "#eef0ff",
-          100: "#e0e3ff",
-          200: "#c7ccff",
-          300: "#a5a9ff",
-          400: "#867dfd",
-          500: "#6f5ef6",
-          600: "#5d3fea",
-          700: "#4f30cf",
-          800: "#412aa7",
-          900: "#372884",
-          950: "#22174d",
+          50: "#f0f9ff",
+          100: "#e0f2fe",
+          200: "#bae6fd",
+          300: "#7dd3fc",
+          400: "#38b6ff",
+          500: "#18a4fb",
+          600: "#0284c7",
+          700: "#0369a1",
+          800: "#075985",
+          900: "#0c4a6e",
+          950: "#082f49",
         },
         accent: {
           DEFAULT: "#10b6a3",

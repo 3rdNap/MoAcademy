@@ -153,7 +153,7 @@ export async function getCurrentUser(): Promise<User> {
             (profile?.role as User["role"]) ??
             (user.user_metadata?.role as User["role"]) ??
             "student",
-          avatarColor: (profile?.avatar_color as string) ?? "#5d3fea",
+          avatarColor: (profile?.avatar_color as string) ?? "#0284c7",
           initials: initialsOf(name),
         };
       }

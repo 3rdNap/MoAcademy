@@ -293,7 +293,7 @@ export function InboxBoard({
               >
                 <Avatar
                   initials={initialsOf(c.with)}
-                  color={c.color ?? "#5d3fea"}
+                  color={c.color ?? "#0284c7"}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
