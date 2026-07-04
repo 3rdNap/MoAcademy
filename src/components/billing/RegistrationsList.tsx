@@ -1,11 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { CreditCard, Printer, Receipt, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useLocalCollection } from "@/lib/local-store";
 import { formatMoney } from "@/lib/billing/pricing";
+import {
+  fetchRemoteRegistrations,
+  removeRemoteRegistration,
+} from "@/lib/billing/registration-db";
 import {
   paymentMethodLabel,
   type Registration,
@@ -13,10 +18,40 @@ import {
 import { formatDate } from "@/lib/utils";
 
 export function RegistrationsList() {
-  const { items, remove, hydrated } = useLocalCollection<Registration>(
-    "moacademy.billing.registrations",
-    [],
+  const {
+    items: local,
+    remove,
+    hydrated,
+  } = useLocalCollection<Registration>("moacademy.billing.registrations", []);
+
+  // Merge in server-side invoices for the signed-in student (they win on id
+  // clashes — a checkout stores both copies).
+  const [remote, setRemote] = useState<Registration[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteRegistrations().then((r) => alive && setRemote(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const remoteIds = useMemo(
+    () => new Set((remote ?? []).map((r) => r.id)),
+    [remote],
   );
+  const items = useMemo(
+    () => [...(remote ?? []), ...local.filter((r) => !remoteIds.has(r.id))],
+    [remote, local, remoteIds],
+  );
+
+  async function removeRegistration(id: string) {
+    if (remoteIds.has(id)) {
+      if (await removeRemoteRegistration(id)) {
+        setRemote((prev) => (prev ?? []).filter((r) => r.id !== id));
+      }
+    }
+    remove(id); // clears any local copy of the same invoice too
+  }
 
   const totalPaid = items.reduce((sum, r) => sum + r.total, 0);
 
@@ -80,7 +115,7 @@ export function RegistrationsList() {
                   <Printer className="h-3.5 w-3.5" /> Print
                 </button>
                 <button
-                  onClick={() => remove(r.id)}
+                  onClick={() => removeRegistration(r.id)}
                   className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
                   aria-label="Delete registration"
                 >

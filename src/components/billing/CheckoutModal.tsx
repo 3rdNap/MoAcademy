@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 import { newId } from "@/lib/local-store";
+import { addRemoteRegistration } from "@/lib/billing/registration-db";
 import { formatMoney, type Quote } from "@/lib/billing/pricing";
 import {
   buildRegistration,
@@ -60,6 +61,10 @@ export function CheckoutModal({
     });
     onPaid(reg);
     setPaid(reg);
+    // Also store it server-side when signed in, so the invoice (and the
+    // subjects that unlock study guides) follow the student across devices.
+    // Fire-and-forget: the local copy above is the fallback.
+    void addRemoteRegistration(reg);
   }
 
   function close() {
