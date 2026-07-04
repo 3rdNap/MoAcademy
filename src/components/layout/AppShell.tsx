@@ -17,7 +17,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         <GlobalNav />
         <div className="md:pl-[84px]">
           <TopBar user={user} courses={courses} />
-          <main className="mx-auto w-full max-w-7xl px-4 pb-24 pt-6 md:px-6 md:pb-10">
+          <main className="mx-auto w-full max-w-[1480px] px-4 pb-24 pt-6 md:px-6 md:pb-10 lg:px-8">
             {children}
           </main>
         </div>
