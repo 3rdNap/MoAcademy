@@ -13,6 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import Link from "next/link";
+import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -32,7 +33,6 @@ import {
 import { seedGuides, type StudyGuide } from "@/lib/study-guides";
 import { subjects } from "@/lib/billing/subjects";
 import type { Registration } from "@/lib/billing/registration";
-import { formatDate } from "@/lib/utils";
 
 const MAX_PDF = 3 * 1024 * 1024;
 const MAX_THUMB = 1.5 * 1024 * 1024;
@@ -332,10 +332,14 @@ export function StudyGuidesBoard() {
                         <p className="mt-1 line-clamp-3 flex-1 text-sm text-ink-muted">
                           {g.description}
                         </p>
-                        <div className="mt-3 flex items-center justify-between">
-                          <span className="text-xs text-ink-faint">
-                            {formatDate(g.createdAt)}
-                          </span>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <Link
+                            href={`/assistant?topic=${encodeURIComponent(`the "${g.title}" study guide (${g.subject})`)}`}
+                            className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/10 px-2.5 text-xs font-semibold text-ink-muted hover:bg-surface-subtle hover:text-ink dark:border-white/10"
+                            title="Ask Mo about this guide"
+                          >
+                            <MoMarkIcon className="h-3 w-auto" /> Ask Mo
+                          </Link>
                           {href ? (
                             <a
                               href={href}

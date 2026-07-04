@@ -40,12 +40,13 @@ export function AssistantChat() {
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  // "Ask Mo about this course" arrives as ?course=…; keep it as a dismissible
-  // topic that's sent along with every message.
+  // "Ask Mo about …" deep links arrive as ?course=… (course banners) or
+  // ?topic=… (study guides etc.); keep it as a dismissible topic that's sent
+  // along with every message.
   const searchParams = useSearchParams();
   const [courseTopic, setCourseTopic] = useState<string | null>(null);
   useEffect(() => {
-    const c = searchParams.get("course");
+    const c = searchParams.get("topic") ?? searchParams.get("course");
     if (c) setCourseTopic(c);
   }, [searchParams]);
 
