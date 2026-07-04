@@ -24,8 +24,8 @@ export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/mo-mark.png" alt="mo" className="h-7 w-auto" />
         <span aria-hidden className="h-9 w-px bg-ink/70" />
-        {/* ACADEMY dominates (~4:1 vs the slogan), set in the logo's
-            geometric sans, as in the artwork */}
+        {/* ACADEMY dominates (~4:1 vs the slogan), set in Poppins — the
+            logo's typeface */}
         <span className="flex flex-col justify-center gap-[3px] font-display">
           <span className="text-xl font-extrabold leading-none tracking-tight text-ink">
             ACADEMY

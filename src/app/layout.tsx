@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Montserrat } from "next/font/google";
+import { Inter, Poppins } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 
@@ -9,8 +9,8 @@ const inter = Inter({
   display: "swap",
 });
 
-// Geometric sans used by the logo lockup (ACADEMY / SMART LEARNING).
-const montserrat = Montserrat({
+// Poppins — the logo lockup's typeface (ACADEMY / SMART LEARNING).
+const poppins = Poppins({
   subsets: ["latin"],
   weight: ["500", "800"],
   variable: "--font-display",
@@ -37,7 +37,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${montserrat.variable}`}
+      className={`${inter.variable} ${poppins.variable}`}
       suppressHydrationWarning
     >
       <head>
