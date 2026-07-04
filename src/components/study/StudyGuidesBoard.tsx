@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Download,
   FileText,
@@ -22,6 +22,13 @@ import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import { uploadStudyFile } from "@/lib/supabase/storage";
+import {
+  addRemoteGuide,
+  fetchRemoteGuides,
+  getSignedInUserId,
+  removeRemoteGuide,
+  updateRemoteGuide,
+} from "@/lib/study-guides-db";
 import { seedGuides, type StudyGuide } from "@/lib/study-guides";
 import { subjects } from "@/lib/billing/subjects";
 import type { Registration } from "@/lib/billing/registration";
@@ -66,6 +73,29 @@ export function StudyGuidesBoard() {
     seedGuides,
   );
 
+  // Shared library (Supabase). When reachable it replaces the bundled seeds:
+  // admin uploads are published for every student on every device. Guides
+  // saved on this device before signing in remain visible alongside it.
+  const [remote, setRemote] = useState<StudyGuide[] | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteGuides().then((g) => alive && setRemote(g));
+    getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const seedIds = useMemo(() => new Set(seedGuides.map((g) => g.id)), []);
+  const source = useMemo(
+    () =>
+      remote === null
+        ? items
+        : [...remote, ...items.filter((g) => !seedIds.has(g.id))],
+    [remote, items, seedIds],
+  );
+
   // Which subjects has this student registered for? (from Billing checkouts)
   const registrations = useLocalCollection<Registration>(
     "moacademy.billing.registrations",
@@ -85,8 +115,8 @@ export function StudyGuidesBoard() {
 
   // Admins see everything; students see only guides for registered subjects.
   const visible = manage
-    ? items
-    : items.filter((g) => registeredSubjects.has(g.subject));
+    ? source
+    : source.filter((g) => registeredSubjects.has(g.subject));
 
   const grouped = useMemo(() => {
     const map = new Map<string, StudyGuide[]>();
@@ -146,7 +176,7 @@ export function StudyGuidesBoard() {
     reader.readAsDataURL(file);
   }
 
-  function save() {
+  async function save() {
     if (!draft.title.trim()) return;
     const payload = {
       title: draft.title.trim(),
@@ -158,9 +188,46 @@ export function StudyGuidesBoard() {
       thumbUrl: draft.thumbUrl,
       thumbData: draft.thumbData,
     };
+
+    // Publish to the shared library when signed in; otherwise (or if the
+    // write is refused — e.g. not an admin) keep it on this device.
+    const isRemoteGuide = Boolean(draft.id && remote?.some((g) => g.id === draft.id));
+    if (remote !== null && signedIn) {
+      if (isRemoteGuide) {
+        if (await updateRemoteGuide(draft.id!, payload)) {
+          setRemote((prev) =>
+            (prev ?? []).map((g) => (g.id === draft.id ? { ...g, ...payload } : g)),
+          );
+          setOpen(false);
+          return;
+        }
+      } else if (!draft.id) {
+        const created = await addRemoteGuide(payload);
+        if (created) {
+          setRemote((prev) => [created, ...(prev ?? [])]);
+          setOpen(false);
+          return;
+        }
+      }
+      setNote(
+        "Couldn't publish to the shared library (admin account required) — saving on this device instead.",
+      );
+    }
+    if (isRemoteGuide) return; // don't shadow a shared guide with a local copy
+
     if (draft.id) update(draft.id, payload);
     else add({ ...payload, id: newId(), createdAt: new Date().toISOString() });
     setOpen(false);
+  }
+
+  async function removeGuide(id: string) {
+    if (remote?.some((g) => g.id === id)) {
+      if (await removeRemoteGuide(id)) {
+        setRemote((prev) => (prev ?? []).filter((g) => g.id !== id));
+      }
+      return;
+    }
+    remove(id);
   }
 
   const draftThumb = draft.thumbData || draft.thumbUrl;
@@ -251,7 +318,7 @@ export function StudyGuidesBoard() {
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                             <button
-                              onClick={() => remove(g.id)}
+                              onClick={() => removeGuide(g.id)}
                               className="focus-ring flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur hover:bg-rose-600"
                               aria-label="Delete guide"
                             >
