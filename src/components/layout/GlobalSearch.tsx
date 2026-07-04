@@ -12,7 +12,9 @@ import {
   Home,
   Inbox,
   LayoutGrid,
+  Library,
   Search,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import * as seed from "@/lib/data/seed";
@@ -36,6 +38,8 @@ const pages: Entry[] = [
   { id: "p-inbox", kind: "Page", title: "Inbox", subtitle: "Messages", href: "/inbox", icon: Inbox },
   { id: "p-grades", kind: "Page", title: "Grades", subtitle: "Term standing", href: "/grades", icon: GraduationCap },
   { id: "p-billing", kind: "Page", title: "Billing", subtitle: "Registration", href: "/billing", icon: CreditCard },
+  { id: "p-guides", kind: "Page", title: "Study Guides", subtitle: "PDF guide library", href: "/study-guides", icon: Library },
+  { id: "p-assistant", kind: "Page", title: "Assistant", subtitle: "Ask Mo, your AI tutor", href: "/assistant", icon: Sparkles },
 ];
 
 export function GlobalSearch() {
