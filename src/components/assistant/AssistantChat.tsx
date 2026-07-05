@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Globe, SendHorizonal, Trash2, X } from "lucide-react";
+import { Globe, SendHorizonal, Square, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { useLocalCollection } from "@/lib/local-store";
@@ -102,11 +102,16 @@ export function AssistantChat() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
+  // Lets the Stop button cancel an in-flight answer (partial text is kept).
+  const abortRef = useRef<AbortController | null>(null);
+
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
     setError(null);
     setInput("");
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const nextMessages: ChatMessage[] = [
       ...messages,
@@ -129,6 +134,7 @@ export function AssistantChat() {
             currentCourse: courseTopic ?? undefined,
           },
         }),
+        signal: controller.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -153,15 +159,18 @@ export function AssistantChat() {
         });
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Something went wrong.";
-      setError(msg);
-      // Drop the empty assistant bubble on failure.
+      const aborted = err instanceof DOMException && err.name === "AbortError";
+      if (!aborted) {
+        setError(err instanceof Error ? err.message : "Something went wrong.");
+      }
+      // Drop the assistant bubble if nothing arrived (error or instant stop).
       setMessages((prev) => {
         const copy = [...prev];
         if (copy.length && copy[copy.length - 1].content === "") copy.pop();
         return copy;
       });
     } finally {
+      abortRef.current = null;
       setBusy(false);
     }
   }
@@ -273,13 +282,24 @@ export function AssistantChat() {
           placeholder="Ask Mo about your studies…"
           className="focus-ring max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-black/10 bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint dark:border-white/10"
         />
-        <Button
-          type="submit"
-          disabled={busy || !input.trim()}
-          className="h-11 w-11 shrink-0 !px-0"
-        >
-          <SendHorizonal className="h-5 w-5" />
-        </Button>
+        {busy ? (
+          <Button
+            type="button"
+            onClick={() => abortRef.current?.abort()}
+            className="h-11 w-11 shrink-0 !px-0"
+            title="Stop generating"
+          >
+            <Square className="h-4 w-4 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            disabled={!input.trim()}
+            className="h-11 w-11 shrink-0 !px-0"
+          >
+            <SendHorizonal className="h-5 w-5" />
+          </Button>
+        )}
       </form>
       <p className="mt-1.5 text-center text-[11px] text-ink-faint">
         Mo is powered by Anthropic&apos;s Claude and can make mistakes —
