@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   Announcement,
@@ -124,7 +125,7 @@ function initialsOf(name: string): string {
 
 /* ------------------------------- queries -------------------------------- */
 
-export async function getCurrentUser(): Promise<User> {
+export const getCurrentUser = cache(async (): Promise<User> => {
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
@@ -162,9 +163,9 @@ export async function getCurrentUser(): Promise<User> {
     }
   }
   return seed.currentUser;
-}
+});
 
-export async function getCourses(): Promise<Course[]> {
+export const getCourses = cache(async (): Promise<Course[]> => {
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
@@ -180,14 +181,14 @@ export async function getCourses(): Promise<Course[]> {
     }
   }
   return seed.courses;
-}
+});
 
 export async function getCourse(id: string): Promise<Course | undefined> {
   const all = await getCourses();
   return all.find((c) => c.id === id);
 }
 
-export async function getModules(courseId: string): Promise<CourseModule[]> {
+export const getModules = cache(async (courseId: string): Promise<CourseModule[]> => {
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
@@ -217,9 +218,9 @@ export async function getModules(courseId: string): Promise<CourseModule[]> {
     }
   }
   return seed.modules.filter((m) => m.courseId === courseId);
-}
+});
 
-export async function getAssignments(courseId?: string): Promise<Assignment[]> {
+export const getAssignments = cache(async (courseId?: string): Promise<Assignment[]> => {
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
@@ -236,11 +237,11 @@ export async function getAssignments(courseId?: string): Promise<Assignment[]> {
   return courseId
     ? seed.assignments.filter((a) => a.courseId === courseId)
     : seed.assignments;
-}
+});
 
-export async function getAnnouncements(
+export const getAnnouncements = cache(async (
   courseId?: string,
-): Promise<Announcement[]> {
+): Promise<Announcement[]> => {
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
@@ -260,7 +261,7 @@ export async function getAnnouncements(
   return courseId
     ? seed.announcements.filter((a) => a.courseId === courseId)
     : seed.announcements;
-}
+});
 
 export async function getActivity(): Promise<ActivityEvent[]> {
   return seed.activity;
