@@ -13,6 +13,7 @@ import {
   Inbox,
   LayoutGrid,
   Library,
+  ListChecks,
   Search,
   Sparkles,
   type LucideIcon,
@@ -40,6 +41,7 @@ const pages: Entry[] = [
   { id: "p-billing", kind: "Page", title: "Billing", subtitle: "Registration", href: "/billing", icon: CreditCard },
   { id: "p-guides", kind: "Page", title: "Study Guides", subtitle: "PDF guide library", href: "/study-guides", icon: Library },
   { id: "p-assistant", kind: "Page", title: "Assistant", subtitle: "Ask Mo, your AI tutor", href: "/assistant", icon: Sparkles },
+  { id: "p-practice", kind: "Page", title: "Practice", subtitle: "Mo-made quizzes with instant marking", href: "/practice", icon: ListChecks },
 ];
 
 export function GlobalSearch() {
