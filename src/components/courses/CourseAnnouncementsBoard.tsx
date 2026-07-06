@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Megaphone, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Avatar } from "@/components/ui/Avatar";
@@ -12,6 +12,13 @@ import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
+import {
+  addRemoteAnnouncement,
+  fetchRemoteAnnouncements,
+  removeRemoteAnnouncement,
+  updateRemoteAnnouncement,
+} from "@/lib/course-content-db";
+import { getSignedInUserId } from "@/lib/study-guides-db";
 import { formatDateTime, initialsOf } from "@/lib/utils";
 import type { Announcement, Course } from "@/lib/types";
 
@@ -37,6 +44,19 @@ export function CourseAnnouncementsBoard({
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiNote, setAiNote] = useState<string | null>(null);
+
+  // Shared announcements (Supabase): published by signed-in teaching
+  // accounts, visible to every student on every device.
+  const [remote, setRemote] = useState<Announcement[] | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteAnnouncements(course.id).then((r) => alive && setRemote(r));
+    getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
+    return () => {
+      alive = false;
+    };
+  }, [course.id]);
 
   /** "Draft with Mo": generate the announcement body from the title. */
   async function draftWithMo() {
@@ -68,14 +88,19 @@ export function CourseAnnouncementsBoard({
     }
   }
 
-  const rows = useMemo(
-    () =>
-      [
-        ...authored.items.map((a) => ({ a, local: true })),
-        ...seed.map((a) => ({ a, local: false })),
-      ].sort((x, y) => +new Date(y.a.postedAt) - +new Date(x.a.postedAt)),
-    [authored.items, seed],
-  );
+  type Source = "local" | "remote" | "seed";
+  const rows = useMemo(() => {
+    // The server-provided seed already merges published rows (data layer), so
+    // dedupe against the client's own fetch of the shared table.
+    const remoteIds = new Set((remote ?? []).map((a) => a.id));
+    return [
+      ...authored.items.map((a) => ({ a, source: "local" as Source })),
+      ...(remote ?? []).map((a) => ({ a, source: "remote" as Source })),
+      ...seed
+        .filter((a) => !remoteIds.has(a.id))
+        .map((a) => ({ a, source: "seed" as Source })),
+    ].sort((x, y) => +new Date(y.a.postedAt) - +new Date(x.a.postedAt));
+  }, [authored.items, remote, seed]);
 
   function openCreate() {
     setDraft(emptyDraft);
@@ -87,25 +112,64 @@ export function CourseAnnouncementsBoard({
     setOpen(true);
   }
 
-  function save() {
+  async function save() {
     if (!draft.title.trim() || !draft.body.trim()) return;
+    const patch = {
+      title: draft.title.trim(),
+      author: draft.author.trim() || course.instructor,
+      body: draft.body.trim(),
+    };
+
+    // Publish to the shared table when signed in; a refused write (not a
+    // teaching account) falls back to this device with a note.
+    const isRemoteRow = Boolean(draft.id && remote?.some((a) => a.id === draft.id));
+    if (remote !== null && signedIn) {
+      if (isRemoteRow) {
+        if (await updateRemoteAnnouncement(draft.id!, patch)) {
+          setRemote((prev) =>
+            (prev ?? []).map((a) => (a.id === draft.id ? { ...a, ...patch } : a)),
+          );
+          setOpen(false);
+          return;
+        }
+      } else if (!draft.id) {
+        const created = await addRemoteAnnouncement({
+          courseKey: course.id,
+          ...patch,
+        });
+        if (created) {
+          setRemote((prev) => [created, ...(prev ?? [])]);
+          setOpen(false);
+          return;
+        }
+      }
+      setAiNote(
+        "Couldn't publish to all students (teaching account required) — saved on this device instead.",
+      );
+    }
+    if (isRemoteRow) return; // don't shadow a published announcement locally
+
     if (draft.id) {
-      authored.update(draft.id, {
-        title: draft.title.trim(),
-        author: draft.author.trim() || course.instructor,
-        body: draft.body.trim(),
-      });
+      authored.update(draft.id, patch);
     } else {
       authored.add({
         id: newId(),
         courseId: course.id,
-        title: draft.title.trim(),
-        author: draft.author.trim() || course.instructor,
         postedAt: new Date().toISOString(),
-        body: draft.body.trim(),
+        ...patch,
       });
     }
     setOpen(false);
+  }
+
+  async function removeRow(a: Announcement, source: Source) {
+    if (source === "remote") {
+      if (await removeRemoteAnnouncement(a.id)) {
+        setRemote((prev) => (prev ?? []).filter((x) => x.id !== a.id));
+      }
+      return;
+    }
+    authored.remove(a.id);
   }
 
   return (
@@ -122,6 +186,12 @@ export function CourseAnnouncementsBoard({
         }
       />
 
+      {aiNote && !open && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {aiNote}
+        </p>
+      )}
+
       {rows.length === 0 ? (
         <div className="card flex flex-col items-center gap-2 p-10 text-center">
           <Megaphone className="h-8 w-8 text-ink-faint" />
@@ -129,7 +199,7 @@ export function CourseAnnouncementsBoard({
         </div>
       ) : (
         <div className="space-y-4">
-          {rows.map(({ a, local }) => (
+          {rows.map(({ a, source }) => (
             <article key={a.id} className="card p-5">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-3">
@@ -137,14 +207,16 @@ export function CourseAnnouncementsBoard({
                   <div>
                     <div className="flex items-center gap-2">
                       <h2 className="font-semibold text-ink">{a.title}</h2>
-                      {local && <Badge tone="brand">Posted by you</Badge>}
+                      {source === "local" && <Badge tone="brand">Posted by you</Badge>}
+                      {source === "remote" && <Badge tone="success">Published</Badge>}
                     </div>
                     <p className="text-xs text-ink-faint">
                       {a.author} · {formatDateTime(a.postedAt)}
                     </p>
                   </div>
                 </div>
-                {teaching && local && (
+                {teaching &&
+                  (source === "local" || (source === "remote" && signedIn)) && (
                   <div className="flex shrink-0 gap-1">
                     <button
                       onClick={() => openEdit(a)}
@@ -154,7 +226,7 @@ export function CourseAnnouncementsBoard({
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => authored.remove(a.id)}
+                      onClick={() => removeRow(a, source)}
                       className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
                       aria-label="Delete announcement"
                     >

@@ -1,0 +1,107 @@
+// Supabase-backed instructor-authored course content. Authored rows reference
+// the app's course via course_key (text) since demo courses live in seed data
+// with text ids; see supabase/migrations/0010. Reads are public, writes need
+// a teaching role per RLS. Everything degrades to null/false so callers can
+// fall back to the browser-local authoring store.
+
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { Announcement } from "@/lib/types";
+
+interface AnnouncementRow {
+  id: string;
+  course_key: string | null;
+  course_id: string | null;
+  title: string;
+  author: string;
+  body: string;
+  posted_at: string;
+}
+
+function mapRow(r: AnnouncementRow): Announcement {
+  return {
+    id: r.id,
+    courseId: r.course_key ?? r.course_id ?? "",
+    title: r.title,
+    author: r.author,
+    body: r.body,
+    postedAt: r.posted_at,
+  };
+}
+
+/** Shared announcements for a course, newest first — or null when offline. */
+export async function fetchRemoteAnnouncements(
+  courseKey: string,
+): Promise<Announcement[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("announcements")
+      .select("*")
+      .eq("course_key", courseKey)
+      .order("posted_at", { ascending: false });
+    if (error || !data) return null;
+    return (data as unknown as AnnouncementRow[]).map(mapRow);
+  } catch {
+    return null;
+  }
+}
+
+/** Publish an announcement. Null when refused (not a teaching account). */
+export async function addRemoteAnnouncement(input: {
+  courseKey: string;
+  title: string;
+  author: string;
+  body: string;
+}): Promise<Announcement | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("announcements")
+      .insert({
+        course_key: input.courseKey,
+        title: input.title,
+        author: input.author,
+        body: input.body,
+      })
+      .select()
+      .single();
+    if (error || !data) return null;
+    return mapRow(data as unknown as AnnouncementRow);
+  } catch {
+    return null;
+  }
+}
+
+export async function updateRemoteAnnouncement(
+  id: string,
+  patch: { title: string; author: string; body: string },
+): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from("announcements")
+      .update(patch)
+      .eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function removeRemoteAnnouncement(id: string): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from("announcements").delete().eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
