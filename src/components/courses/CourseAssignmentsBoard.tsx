@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Paperclip, Pencil, Plus, Send, Trash2, Upload } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
@@ -11,6 +11,13 @@ import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
+import {
+  addRemoteAssignment,
+  fetchRemoteAssignments,
+  removeRemoteAssignment,
+  updateRemoteAssignment,
+} from "@/lib/course-content-db";
+import { getSignedInUserId } from "@/lib/study-guides-db";
 import { itemIcon } from "@/lib/itemMeta";
 import { formatDateTime, relativeTime } from "@/lib/utils";
 import type { Assignment, Course, SubmissionStatus } from "@/lib/types";
@@ -79,6 +86,20 @@ export function CourseAssignmentsBoard({
   const [subFile, setSubFile] = useState<string | undefined>();
   const [aiBusy, setAiBusy] = useState(false);
   const [aiNote, setAiNote] = useState<string | null>(null);
+  const [pubNote, setPubNote] = useState<string | null>(null);
+
+  // Shared assignments (Supabase): published by signed-in teaching accounts,
+  // visible to every student on every device.
+  const [remote, setRemote] = useState<Assignment[] | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteAssignments(course.id).then((r) => alive && setRemote(r));
+    getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
+    return () => {
+      alive = false;
+    };
+  }, [course.id]);
 
   /** "Draft with Mo": generate the student-facing description server-side. */
   async function draftWithMo() {
@@ -143,13 +164,20 @@ export function CourseAssignmentsBoard({
     setSubFile(undefined);
   }
 
+  type Source = "local" | "remote" | "seed";
   const rows = useMemo(() => {
+    // The server-provided seed already merges published rows (data layer), so
+    // dedupe against the client's own fetch of the shared table.
+    const remoteIds = new Set((remote ?? []).map((a) => a.id));
     const combined = [
-      ...seed.map((a) => ({ a, local: false })),
-      ...authored.items.map((a) => ({ a, local: true })),
+      ...seed
+        .filter((a) => !remoteIds.has(a.id))
+        .map((a) => ({ a, source: "seed" as Source })),
+      ...(remote ?? []).map((a) => ({ a, source: "remote" as Source })),
+      ...authored.items.map((a) => ({ a, source: "local" as Source })),
     ];
     return combined.sort((x, y) => +new Date(x.a.dueAt) - +new Date(y.a.dueAt));
-  }, [seed, authored.items]);
+  }, [seed, remote, authored.items]);
 
   const totalPoints = rows.reduce((n, r) => n + r.a.points, 0);
 
@@ -170,33 +198,67 @@ export function CourseAssignmentsBoard({
     setOpen(true);
   }
 
-  function save() {
+  async function save() {
     if (!draft.title.trim()) return;
     const dueAt = draft.dueAt
       ? new Date(draft.dueAt + "T23:59:00Z").toISOString()
       : new Date().toISOString();
+    const input = {
+      title: draft.title.trim(),
+      type: draft.type,
+      dueAt,
+      points: draft.points,
+      description: draft.description,
+    };
+
+    // Publish to the shared table when signed in; a refused write (not a
+    // teaching account) falls back to this device with a note.
+    const isRemoteRow = Boolean(draft.id && remote?.some((a) => a.id === draft.id));
+    if (remote !== null && signedIn) {
+      if (isRemoteRow) {
+        if (await updateRemoteAssignment(draft.id!, input)) {
+          setRemote((prev) =>
+            (prev ?? []).map((a) => (a.id === draft.id ? { ...a, ...input } : a)),
+          );
+          setOpen(false);
+          return;
+        }
+      } else if (!draft.id) {
+        const created = await addRemoteAssignment(course.id, input);
+        if (created) {
+          setRemote((prev) => [...(prev ?? []), created]);
+          setOpen(false);
+          return;
+        }
+      }
+      setPubNote(
+        "Couldn't publish to all students (teaching account required) — saved on this device instead.",
+      );
+    }
+    if (isRemoteRow) return; // don't shadow a published assignment locally
+
     if (draft.id) {
-      authored.update(draft.id, {
-        title: draft.title.trim(),
-        type: draft.type,
-        dueAt,
-        points: draft.points,
-        description: draft.description,
-      });
+      authored.update(draft.id, input);
     } else {
       const assignment: Assignment = {
         id: newId(),
         courseId: course.id,
-        title: draft.title.trim(),
-        type: draft.type,
-        dueAt,
-        points: draft.points,
         status: "not_started",
-        description: draft.description,
+        ...input,
       };
       authored.add(assignment);
     }
     setOpen(false);
+  }
+
+  async function removeRow(a: Assignment, source: Source) {
+    if (source === "remote") {
+      if (await removeRemoteAssignment(a.id)) {
+        setRemote((prev) => (prev ?? []).filter((x) => x.id !== a.id));
+      }
+      return;
+    }
+    authored.remove(a.id);
   }
 
   return (
@@ -213,8 +275,14 @@ export function CourseAssignmentsBoard({
         }
       />
 
+      {pubNote && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {pubNote}
+        </p>
+      )}
+
       <div className="card divide-y divide-black/5">
-        {rows.map(({ a, local }) => {
+        {rows.map(({ a, source }) => {
           const Icon = itemIcon[a.type];
           const status = effectiveStatus(a);
           const badge = statusBadge[status];
@@ -234,7 +302,8 @@ export function CourseAssignmentsBoard({
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium text-ink">{a.title}</h3>
                   <Badge tone={badge.tone}>{badge.label}</Badge>
-                  {local && <Badge tone="brand">Added by you</Badge>}
+                  {source === "local" && <Badge tone="brand">Added by you</Badge>}
+                  {source === "remote" && <Badge tone="success">Published</Badge>}
                 </div>
                 <p className="mt-0.5 text-sm text-ink-muted">{a.description}</p>
                 <p className="mt-1 text-xs text-ink-faint">
@@ -268,7 +337,8 @@ export function CourseAssignmentsBoard({
                     {sub ? "Resubmit" : "Submit"}
                   </Button>
                 )}
-                {teaching && local && (
+                {teaching &&
+                  (source === "local" || (source === "remote" && signedIn)) && (
                   <div className="flex gap-1">
                     <button
                       onClick={() => openEdit(a)}
@@ -278,7 +348,7 @@ export function CourseAssignmentsBoard({
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => authored.remove(a.id)}
+                      onClick={() => removeRow(a, source)}
                       className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
                       aria-label="Delete assignment"
                     >

@@ -74,7 +74,8 @@ function mapItem(r: RawModuleItem): ModuleItem {
 
 interface RawAssignment {
   id: string;
-  course_id: string;
+  course_id: string | null;
+  course_key?: string | null;
   title: string;
   type: Assignment["type"];
   description: string;
@@ -85,7 +86,8 @@ interface RawAssignment {
 function mapAssignment(r: RawAssignment): Assignment {
   return {
     id: r.id,
-    courseId: r.course_id,
+    // Authored rows reference seed courses via course_key (see migration 0011).
+    courseId: r.course_key ?? r.course_id ?? "",
     title: r.title,
     type: r.type,
     description: r.description,
@@ -223,22 +225,30 @@ export const getModules = cache(async (courseId: string): Promise<CourseModule[]
 });
 
 export const getAssignments = cache(async (courseId?: string): Promise<Assignment[]> => {
+  const seedRows = courseId
+    ? seed.assignments.filter((a) => a.courseId === courseId)
+    : seed.assignments;
+
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
+      // Instructor-published rows reference seed courses via course_key
+      // (text), so they merge with the bundled assignments rather than
+      // replacing them. This also puts published deadlines into getUpcoming.
       let query = supabase.from("assignments").select("*").order("due_at");
-      if (courseId) query = query.eq("course_id", courseId);
+      if (courseId) query = query.eq("course_key", courseId);
       const { data } = await query;
       if (data && data.length) {
-        return (data as unknown as RawAssignment[]).map(mapAssignment);
+        return [
+          ...(data as unknown as RawAssignment[]).map(mapAssignment),
+          ...seedRows,
+        ].sort((a, b) => +new Date(a.dueAt) - +new Date(b.dueAt));
       }
     } catch {
       /* fall through */
     }
   }
-  return courseId
-    ? seed.assignments.filter((a) => a.courseId === courseId)
-    : seed.assignments;
+  return seedRows;
 });
 
 export const getAnnouncements = cache(async (
