@@ -98,7 +98,8 @@ function mapAssignment(r: RawAssignment): Assignment {
 
 interface RawAnnouncement {
   id: string;
-  course_id: string;
+  course_id: string | null;
+  course_key?: string | null;
   title: string;
   author: string;
   body: string;
@@ -107,7 +108,8 @@ interface RawAnnouncement {
 function mapAnnouncement(r: RawAnnouncement): Announcement {
   return {
     id: r.id,
-    courseId: r.course_id,
+    // Authored rows reference seed courses via course_key (see migration 0010).
+    courseId: r.course_key ?? r.course_id ?? "",
     title: r.title,
     author: r.author,
     body: r.body,
@@ -242,25 +244,33 @@ export const getAssignments = cache(async (courseId?: string): Promise<Assignmen
 export const getAnnouncements = cache(async (
   courseId?: string,
 ): Promise<Announcement[]> => {
+  const seedRows = courseId
+    ? seed.announcements.filter((a) => a.courseId === courseId)
+    : seed.announcements;
+
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
+      // Instructor-published rows reference seed courses via course_key
+      // (text), so they merge with the bundled announcements rather than
+      // replacing them.
       let query = supabase
         .from("announcements")
         .select("*")
         .order("posted_at", { ascending: false });
-      if (courseId) query = query.eq("course_id", courseId);
+      if (courseId) query = query.eq("course_key", courseId);
       const { data } = await query;
       if (data && data.length) {
-        return (data as unknown as RawAnnouncement[]).map(mapAnnouncement);
+        return [
+          ...(data as unknown as RawAnnouncement[]).map(mapAnnouncement),
+          ...seedRows,
+        ].sort((a, b) => +new Date(b.postedAt) - +new Date(a.postedAt));
       }
     } catch {
       /* fall through */
     }
   }
-  return courseId
-    ? seed.announcements.filter((a) => a.courseId === courseId)
-    : seed.announcements;
+  return seedRows;
 });
 
 export async function getActivity(): Promise<ActivityEvent[]> {
