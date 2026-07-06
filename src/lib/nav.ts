@@ -8,6 +8,7 @@ import {
   Inbox,
   LayoutGrid,
   Library,
+  ListChecks,
   type LucideIcon,
 } from "lucide-react";
 import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
@@ -32,6 +33,7 @@ export const globalNav: GlobalNavItem[] = [
   { label: "Courses", href: "/courses", icon: LayoutGrid, onMobileBar: true },
   { label: "Study Guides", href: "/study-guides", icon: Library },
   { label: "Assistant", href: "/assistant", icon: MoMarkIcon, onMobileBar: true },
+  { label: "Practice", href: "/practice", icon: ListChecks },
   { label: "Roadmap", href: "/roadmap", icon: Compass, onMobileBar: true },
   { label: "Calendar", href: "/calendar", icon: Calendar, onMobileBar: true },
   { label: "Inbox", href: "/inbox", icon: Inbox, badgeKey: "inbox" },
