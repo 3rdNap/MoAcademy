@@ -17,7 +17,18 @@ TypeScript, Tailwind CSS, and Supabase. The interface blends the strongest patte
   Grades · Discussions · People) under a colored course banner.
 
 > The app runs **out-of-the-box on bundled seed data** — no backend or config
-> required. Add Supabase credentials to switch to a live database.
+> required. Add Supabase credentials for live accounts + shared data, and an
+> `ANTHROPIC_API_KEY` to switch on Mo, the AI layer (tutor chat, practice
+> quizzes, study plans, authoring assists).
+
+Also part of the platform: a **public landing page** at `/` (the app lives
+under its own route group with the nav chrome), a **web app manifest** so the
+site installs to a phone's home screen with the logo as its icon, a
+pre-launch `robots.txt` block (flip `PRELAUNCH` in `src/app/robots.ts` at
+launch), and **database-backed publishing** — admin study guides, instructor
+announcements and assignments, and per-student registrations/invoices are
+stored in Supabase and visible across devices, with RLS enforcing who can
+write what.
 
 ## Quick start
 
@@ -223,28 +234,32 @@ to a size-guarded browser copy. The metadata table, RLS, and bucket setup are in
 `supabase/migrations/0005_study_guides.sql`. See
 `src/components/study/StudyGuidesBoard.tsx`.
 
-## AI Study Assistant
+## Mo — the AI layer
 
-An in-app AI tutor, **Mo** (global nav → **Assistant**), powered by **Claude**
-(`claude-opus-4-8` by default). Mo is **grounded in the student's own content** —
-their courses, upcoming deadlines and registered-subject study guides are woven
-into the system prompt — while also being a capable general tutor that can pull
-in **live external information via web search** (toggle the globe icon). It
-explains concepts, quizzes the student, summarises study guides and helps plan
-work, and is instructed to *guide* students through graded work rather than hand
-over answers.
+**Mo** is MoAcademy's AI, powered by **Claude** (`claude-opus-4-8` by default;
+set `ASSISTANT_MODEL=claude-fable-5` for the top tier). One server-side
+`ANTHROPIC_API_KEY` switches on the whole suite — the key never reaches the
+browser, and every feature renders a friendly "not configured" state without
+it. Mo wears the blue "mo" logo mark everywhere she appears.
 
-- Server route `src/app/api/chat/route.ts` streams the response and reads
-  `ANTHROPIC_API_KEY` **server-side only** — the key never reaches the browser.
-  Web search uses the server-side `web_search_20260209` tool; adaptive thinking
-  is on by default.
-- Without a key the tab still renders and explains how to enable it (no crash).
-  Set `ANTHROPIC_API_KEY` (and optionally `ASSISTANT_MODEL=claude-fable-5`, which
-  auto-enables server-side refusal fallbacks) — see `.env.example`.
-- The chat UI (`src/components/assistant/AssistantChat.tsx`) streams tokens as
-  they arrive, renders Markdown safely (no `dangerouslySetInnerHTML`, see
-  `markdown.tsx`), and sends a small client-side grounding snapshot (registered
-  subjects + available study-guide titles) with each request.
+- **Study Assistant** (nav → Assistant) — a streaming tutor chat grounded in
+  the student's own courses, deadlines and registered-subject study guides,
+  with optional **live web search**. Conversations persist across visits, can
+  be stopped mid-answer, and deep-link from any course banner or study-guide
+  card ("Ask Mo") with a dismissible topic chip. `src/app/api/chat/route.ts` +
+  `src/components/assistant/`.
+- **Practice** (nav → Practice) — Mo writes a fresh multiple-choice quiz on
+  any topic (suggestions come from the student's subjects and guides), marks
+  each answer instantly with a teaching explanation, and keeps recent scores.
+  Strict-JSON generation validated server-side in `src/app/api/quiz/route.ts`.
+- **Mo's study plan** (dashboard widget) — a 7-day plan built from real
+  assignment deadlines, registered subjects, and practice-quiz weak spots
+  (topics under 70% get revision scheduled). `src/app/api/plan/route.ts`.
+- **Draft with Mo** (instructors) — in the assignment and announcement
+  editors, Mo writes the student-facing text from just a title, editable
+  before publishing. **Mo's summary for parents** — the Family page turns a
+  child's grades and deadlines into a short plain-language recap.
+  Both via `src/app/api/generate/route.ts`.
 
 ## Pinned courses
 

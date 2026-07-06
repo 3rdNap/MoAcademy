@@ -1,17 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   CalendarClock,
   GraduationCap,
   Megaphone,
+  RotateCcw,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Widget } from "@/components/ui/Widget";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
 import { children as demoChildren } from "@/lib/family";
 import {
   clampPct,
@@ -77,6 +80,79 @@ export function FamilyDashboard({
 
   const recentGrades = activity.filter((e) => e.kind === "grade");
 
+  // Mo's summary for the parent — generated from this child's numbers and
+  // cached per child in the browser until refreshed.
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summaryAt, setSummaryAt] = useState<string | null>(null);
+  const [sumBusy, setSumBusy] = useState(false);
+  const [sumError, setSumError] = useState<string | null>(null);
+  useEffect(() => {
+    setSummary(null);
+    setSummaryAt(null);
+    setSumError(null);
+    try {
+      const raw = window.localStorage.getItem(`moacademy.family.summary.${childId}`);
+      if (raw) {
+        const cached = JSON.parse(raw) as { text: string; generatedAt: string };
+        setSummary(cached.text);
+        setSummaryAt(cached.generatedAt);
+      }
+    } catch {
+      /* no cache */
+    }
+  }, [childId]);
+
+  async function summarise() {
+    if (sumBusy) return;
+    setSumBusy(true);
+    setSumError(null);
+    const details = [
+      `${child.name}, ${child.grade}.`,
+      overall != null ? `Overall average: ${overall}% (${letterGrade(overall)}).` : "No grades yet.",
+      ...courseGrades
+        .filter((c) => c.pct != null)
+        .map((c) => `- ${c.course.name}: ${c.pct}%`),
+      ...(upcoming.length
+        ? [
+            "Due in the next two weeks:",
+            ...upcoming.map(
+              (a) =>
+                `- ${a.title} (${courses.find((c) => c.id === a.courseId)?.code ?? ""}) due ${formatDate(a.dueAt)}`,
+            ),
+          ]
+        : ["Nothing due in the next two weeks."]),
+    ];
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "family-summary", title: child.name, details }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { text?: string; error?: string }
+        | null;
+      if (!res.ok || !data?.text) {
+        setSumError(data?.error ?? "Mo couldn't write the summary right now.");
+        return;
+      }
+      const generatedAt = new Date().toISOString();
+      setSummary(data.text);
+      setSummaryAt(generatedAt);
+      try {
+        window.localStorage.setItem(
+          `moacademy.family.summary.${childId}`,
+          JSON.stringify({ text: data.text, generatedAt }),
+        );
+      } catch {
+        /* in-memory only */
+      }
+    } catch {
+      setSumError("Mo couldn't write the summary right now.");
+    } finally {
+      setSumBusy(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -141,6 +217,47 @@ export function FamilyDashboard({
           value={String(announcements.length)}
           tone="text-emerald-600"
         />
+      </div>
+
+      {/* Mo's plain-language recap for the parent */}
+      <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50/60 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <MoMarkIcon className="h-5 w-auto" />
+            <h2 className="text-sm font-semibold text-ink">
+              Mo&apos;s summary for you
+            </h2>
+          </div>
+          {summary ? (
+            <button
+              onClick={summarise}
+              disabled={sumBusy}
+              className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline disabled:opacity-50 dark:text-brand-300"
+            >
+              <RotateCcw className="h-3 w-3" />
+              {sumBusy ? "Writing…" : "Refresh"}
+            </button>
+          ) : (
+            <Button size="sm" onClick={summarise} disabled={sumBusy}>
+              {sumBusy ? "Writing…" : `Summarise ${child.name.split(" ")[0]}'s week`}
+            </Button>
+          )}
+        </div>
+        {summary && (
+          <p className="mt-2 text-sm leading-relaxed text-ink-muted">{summary}</p>
+        )}
+        {summaryAt && (
+          <p className="mt-1 text-[11px] text-ink-faint">
+            Written {relativeTime(summaryAt)}
+          </p>
+        )}
+        {!summary && !sumError && (
+          <p className="mt-2 text-sm text-ink-muted">
+            Mo can turn {child.name.split(" ")[0]}&apos;s grades and deadlines
+            into a short, plain-language update for you.
+          </p>
+        )}
+        {sumError && <p className="mt-2 text-xs text-rose-600">{sumError}</p>}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
