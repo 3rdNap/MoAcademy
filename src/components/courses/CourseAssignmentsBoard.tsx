@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
+import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
@@ -76,6 +77,40 @@ export function CourseAssignmentsBoard({
   const [submitFor, setSubmitFor] = useState<Assignment | null>(null);
   const [subBody, setSubBody] = useState("");
   const [subFile, setSubFile] = useState<string | undefined>();
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiNote, setAiNote] = useState<string | null>(null);
+
+  /** "Draft with Mo": generate the student-facing description server-side. */
+  async function draftWithMo() {
+    if (!draft.title.trim() || aiBusy) return;
+    setAiBusy(true);
+    setAiNote(null);
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "assignment-description",
+          title: draft.title,
+          type: draft.type,
+          course: `${course.code} ${course.name}`,
+          points: draft.points,
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { text?: string; error?: string }
+        | null;
+      if (!res.ok || !data?.text) {
+        setAiNote(data?.error ?? "Mo couldn't draft that right now.");
+        return;
+      }
+      setDraft((d) => ({ ...d, description: data.text! }));
+    } catch {
+      setAiNote("Mo couldn't draft that right now.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   const submissionFor = (aid: string) =>
     submissions.items.find((s) => s.id === aid);
@@ -311,7 +346,27 @@ export function CourseAssignmentsBoard({
               onChange={(e) => setDraft({ ...draft, dueAt: e.target.value })}
             />
           </Field>
-          <Field label="Description">
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="block text-xs font-medium uppercase tracking-wide text-ink-faint">
+                Description
+              </span>
+              <button
+                type="button"
+                onClick={draftWithMo}
+                disabled={!draft.title.trim() || aiBusy}
+                title={
+                  draft.title.trim()
+                    ? "Let Mo draft the description from the title"
+                    : "Give the assignment a title first"
+                }
+                className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300"
+              >
+                <MoMarkIcon className="h-3 w-auto" />
+                {aiBusy ? "Drafting…" : "Draft with Mo"}
+              </button>
+            </div>
+            {aiNote && <p className="mb-1 text-xs text-rose-600">{aiNote}</p>}
             <Textarea
               value={draft.description}
               onChange={(e) =>
@@ -319,7 +374,7 @@ export function CourseAssignmentsBoard({
               }
               placeholder="Instructions for students…"
             />
-          </Field>
+          </div>
         </div>
       </Modal>
 
