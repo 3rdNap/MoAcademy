@@ -5,7 +5,7 @@
 // fall back to the browser-local authoring store.
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { Announcement } from "@/lib/types";
+import type { Announcement, Assignment } from "@/lib/types";
 
 interface AnnouncementRow {
   id: string;
@@ -100,6 +100,123 @@ export async function removeRemoteAnnouncement(id: string): Promise<boolean> {
   if (!supabase) return false;
   try {
     const { error } = await supabase.from("announcements").delete().eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/* ------------------------------ assignments ----------------------------- */
+
+interface AssignmentRow {
+  id: string;
+  course_key: string | null;
+  course_id: string | null;
+  title: string;
+  type: Assignment["type"];
+  description: string;
+  due_at: string;
+  available_at: string | null;
+  points: number;
+}
+
+function mapAssignmentRow(r: AssignmentRow): Assignment {
+  return {
+    id: r.id,
+    courseId: r.course_key ?? r.course_id ?? "",
+    title: r.title,
+    type: r.type,
+    description: r.description,
+    dueAt: r.due_at,
+    availableAt: r.available_at ?? undefined,
+    points: r.points,
+    status: "not_started",
+  };
+}
+
+export interface AssignmentInput {
+  title: string;
+  type: Assignment["type"];
+  description: string;
+  dueAt: string;
+  points: number;
+}
+
+function toAssignmentRow(input: AssignmentInput) {
+  return {
+    title: input.title,
+    type: input.type,
+    description: input.description,
+    due_at: input.dueAt,
+    points: input.points,
+  };
+}
+
+/** Shared assignments for a course, soonest first — or null when offline. */
+export async function fetchRemoteAssignments(
+  courseKey: string,
+): Promise<Assignment[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("assignments")
+      .select("*")
+      .eq("course_key", courseKey)
+      .order("due_at");
+    if (error || !data) return null;
+    return (data as unknown as AssignmentRow[]).map(mapAssignmentRow);
+  } catch {
+    return null;
+  }
+}
+
+/** Publish an assignment. Null when refused (not a teaching account). */
+export async function addRemoteAssignment(
+  courseKey: string,
+  input: AssignmentInput,
+): Promise<Assignment | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("assignments")
+      .insert({ course_key: courseKey, ...toAssignmentRow(input) })
+      .select()
+      .single();
+    if (error || !data) return null;
+    return mapAssignmentRow(data as unknown as AssignmentRow);
+  } catch {
+    return null;
+  }
+}
+
+export async function updateRemoteAssignment(
+  id: string,
+  input: AssignmentInput,
+): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from("assignments")
+      .update(toAssignmentRow(input))
+      .eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function removeRemoteAssignment(id: string): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from("assignments").delete().eq("id", id);
     return !error;
   } catch {
     return false;
