@@ -14,6 +14,7 @@ import { UpcomingList } from "@/components/dashboard/UpcomingList";
 import { RoadmapDeadlinesWidget } from "@/components/dashboard/RoadmapDeadlinesWidget";
 import { BillingStatusWidget } from "@/components/dashboard/BillingStatusWidget";
 import { PinnedCourses } from "@/components/dashboard/PinnedCourses";
+import { StudyPlanWidget } from "@/components/dashboard/StudyPlanWidget";
 import { RolePreviewBanner } from "@/components/role/RolePreviewBanner";
 import {
   getActivity,
@@ -124,6 +125,7 @@ export default async function DashboardPage() {
 
         {/* Right column widgets */}
         <div className="space-y-6">
+          <StudyPlanWidget upcoming={upcoming} courses={courses} />
           <Widget
             title="Upcoming"
             icon={<CalendarClock className="h-4 w-4 text-brand-600" />}
