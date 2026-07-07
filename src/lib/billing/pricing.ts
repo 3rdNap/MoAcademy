@@ -9,13 +9,20 @@
 
 export const CURRENCY = "ZAR";
 
-/** Format an amount as South African Rand, no cents. */
+/**
+ * Format an amount as South African Rand, no cents — e.g. "R 12 450".
+ * Deliberately NOT Intl.NumberFormat: its currency output differs between
+ * Node's ICU (server prerender) and the browser's (hydration), which made
+ * React throw hydration mismatches on the billing page. This is deterministic
+ * everywhere; the grouping space is a non-breaking space so prices don't wrap.
+ */
 export function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("en-ZA", {
-    style: "currency",
-    currency: CURRENCY,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  const sign = amount < 0 ? "-" : "";
+  const grouped = String(Math.round(Math.abs(amount))).replace(
+    /\B(?=(\d{3})+(?!\d))/g,
+    " ",
+  );
+  return `${sign}R ${grouped}`;
 }
 
 /** Volume-discount tiers: the more subjects, the bigger the discount. */
