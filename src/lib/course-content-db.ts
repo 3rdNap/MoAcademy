@@ -382,3 +382,25 @@ export async function removeRemoteModuleItem(id: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Announcements published in the last `days` across all courses — for the
+ * notification bell. Null when offline. */
+export async function fetchRecentRemoteAnnouncements(
+  days = 7,
+): Promise<Announcement[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const { data, error } = await supabase
+      .from("announcements")
+      .select("*")
+      .gte("posted_at", since)
+      .order("posted_at", { ascending: false })
+      .limit(10);
+    if (error || !data) return null;
+    return (data as unknown as Parameters<typeof mapRow>[0][]).map(mapRow);
+  } catch {
+    return null;
+  }
+}

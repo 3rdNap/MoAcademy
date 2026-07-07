@@ -8,9 +8,12 @@ import {
   ClipboardList,
   GraduationCap,
   Mail,
+  Megaphone,
   type LucideIcon,
 } from "lucide-react";
 import { useLocalCollection } from "@/lib/local-store";
+import { fetchRecentRemoteAnnouncements } from "@/lib/course-content-db";
+import type { Announcement } from "@/lib/types";
 import { inboxSeed } from "@/lib/inbox-seed";
 import { seedApplications, seedScholarships } from "@/lib/roadmap/seed";
 import * as seed from "@/lib/data/seed";
@@ -45,6 +48,16 @@ export function NotificationBell() {
   );
 
   useEffect(() => setMounted(true), []);
+
+  // Freshly published instructor announcements (shared table, last 7 days).
+  const [published, setPublished] = useState<Announcement[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetchRecentRemoteAnnouncements().then((a) => alive && a && setPublished(a));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -123,6 +136,20 @@ export function NotificationBell() {
       }
     }
 
+    // Instructor announcements published in the last week
+    for (const a of published) {
+      const course = seed.courses.find((c) => c.id === a.courseId);
+      list.push({
+        id: `ann-${a.id}`,
+        icon: Megaphone,
+        tone: "bg-violet-50 text-violet-600",
+        title: a.title,
+        detail: `${course?.code ?? "Announcement"} · ${a.author}`,
+        href: a.courseId ? `/courses/${a.courseId}/announcements` : "/dashboard",
+        at: a.postedAt,
+      });
+    }
+
     // Recent grades
     for (const ev of seed.activity) {
       if (ev.kind === "grade") {
@@ -139,7 +166,7 @@ export function NotificationBell() {
     }
 
     return list.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-  }, [read.items, apps.items, scholarships.items]);
+  }, [read.items, apps.items, scholarships.items, published]);
 
   const count = mounted ? notes.length : 0;
 
