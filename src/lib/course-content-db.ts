@@ -5,7 +5,12 @@
 // fall back to the browser-local authoring store.
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { Announcement, Assignment } from "@/lib/types";
+import type {
+  Announcement,
+  Assignment,
+  CourseModule,
+  ModuleItem,
+} from "@/lib/types";
 
 interface AnnouncementRow {
   id: string;
@@ -217,6 +222,161 @@ export async function removeRemoteAssignment(id: string): Promise<boolean> {
   if (!supabase) return false;
   try {
     const { error } = await supabase.from("assignments").delete().eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/* -------------------------------- modules ------------------------------- */
+
+interface ModuleItemRow {
+  id: string;
+  module_id: string;
+  title: string;
+  type: ModuleItem["type"];
+  position: number;
+  due_at: string | null;
+  duration_min: number | null;
+  indent: number | null;
+}
+
+interface ModuleRow {
+  id: string;
+  course_key: string | null;
+  course_id: string | null;
+  title: string;
+  position: number;
+  published: boolean;
+  module_items: ModuleItemRow[] | null;
+}
+
+function mapItemRow(r: ModuleItemRow): ModuleItem {
+  return {
+    id: r.id,
+    title: r.title,
+    type: r.type,
+    dueAt: r.due_at ?? undefined,
+    durationMin: r.duration_min ?? undefined,
+    indent: r.indent ?? undefined,
+    completed: false,
+  };
+}
+
+function mapModuleRow(r: ModuleRow): CourseModule {
+  return {
+    id: r.id,
+    courseId: r.course_key ?? r.course_id ?? "",
+    title: r.title,
+    published: r.published,
+    items: (r.module_items ?? [])
+      .sort((a, b) => a.position - b.position)
+      .map(mapItemRow),
+  };
+}
+
+/** Shared modules (with items) for a course — or null when offline. */
+export async function fetchRemoteModules(
+  courseKey: string,
+): Promise<CourseModule[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("modules")
+      .select("*, module_items(*)")
+      .eq("course_key", courseKey)
+      .order("position");
+    if (error || !data) return null;
+    return (data as unknown as ModuleRow[]).map(mapModuleRow);
+  } catch {
+    return null;
+  }
+}
+
+/** Publish a module. Null when refused (not a teaching account). */
+export async function addRemoteModule(
+  courseKey: string,
+  title: string,
+  published: boolean,
+): Promise<CourseModule | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("modules")
+      .insert({ course_key: courseKey, title, published })
+      .select()
+      .single();
+    if (error || !data) return null;
+    return mapModuleRow({ ...(data as unknown as ModuleRow), module_items: [] });
+  } catch {
+    return null;
+  }
+}
+
+export async function setRemoteModulePublished(
+  id: string,
+  published: boolean,
+): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from("modules")
+      .update({ published })
+      .eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function removeRemoteModule(id: string): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from("modules").delete().eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/** Add an item to a shared module. Null when refused. */
+export async function addRemoteModuleItem(
+  moduleId: string,
+  input: { title: string; type: ModuleItem["type"]; position: number },
+): Promise<ModuleItem | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("module_items")
+      .insert({
+        module_id: moduleId,
+        title: input.title,
+        type: input.type,
+        position: input.position,
+      })
+      .select()
+      .single();
+    if (error || !data) return null;
+    return mapItemRow(data as unknown as ModuleItemRow);
+  } catch {
+    return null;
+  }
+}
+
+export async function removeRemoteModuleItem(id: string): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from("module_items").delete().eq("id", id);
     return !error;
   } catch {
     return false;

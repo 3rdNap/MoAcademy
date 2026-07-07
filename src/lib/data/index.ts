@@ -193,13 +193,18 @@ export async function getCourse(id: string): Promise<Course | undefined> {
 }
 
 export const getModules = cache(async (courseId: string): Promise<CourseModule[]> => {
+  const seedRows = seed.modules.filter((m) => m.courseId === courseId);
+
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
+      // Instructor-published modules reference seed courses via course_key
+      // (text), so they merge with the bundled modules rather than replacing
+      // them (see migration 0012).
       const { data: mods } = await supabase
         .from("modules")
         .select("*")
-        .eq("course_id", courseId)
+        .eq("course_key", courseId)
         .order("position");
       if (mods && mods.length) {
         const ids = mods.map((m) => m.id);
@@ -209,19 +214,20 @@ export const getModules = cache(async (courseId: string): Promise<CourseModule[]
           .in("module_id", ids)
           .order("position");
         const rawItems = (items ?? []) as unknown as RawModuleItem[];
-        return mods.map((m) => ({
+        const dbModules = mods.map((m) => ({
           id: m.id as string,
-          courseId: m.course_id as string,
+          courseId: (m.course_key ?? m.course_id) as string,
           title: m.title as string,
           published: m.published as boolean,
           items: rawItems.filter((it) => it.module_id === m.id).map(mapItem),
         }));
+        return [...seedRows, ...dbModules];
       }
     } catch {
       /* fall through */
     }
   }
-  return seed.modules.filter((m) => m.courseId === courseId);
+  return seedRows;
 });
 
 export const getAssignments = cache(async (courseId?: string): Promise<Assignment[]> => {
