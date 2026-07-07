@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
   MessageSquare,
@@ -15,6 +15,14 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { useLocalCollection, newId } from "@/lib/local-store";
+import {
+  addRemoteReply,
+  addRemoteTopic,
+  fetchRemoteTopics,
+  removeRemoteReply,
+  type RemoteTopic,
+} from "@/lib/discussions-db";
+import { getSignedInUserId } from "@/lib/study-guides-db";
 import { initialsOf, relativeTime } from "@/lib/utils";
 import type { Course } from "@/lib/types";
 
@@ -40,12 +48,14 @@ interface Reply {
   createdAt: string;
 }
 
+type Source = "local" | "remote" | "seed";
+
 interface Thread {
   id: string;
   title: string;
   context: string;
   author: string;
-  local: boolean;
+  source: Source;
 }
 
 export function DiscussionsBoard({
@@ -66,6 +76,20 @@ export function DiscussionsBoard({
     [],
   );
 
+  // Shared discussions (Supabase): signed-in users post for the whole class;
+  // signed-out visitors keep the browser-local experience.
+  const [remote, setRemote] = useState<RemoteTopic[] | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  const [pubNote, setPubNote] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteTopics(course.id).then((r) => alive && setRemote(r));
+    getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
+    return () => {
+      alive = false;
+    };
+  }, [course.id]);
+
   const [selected, setSelected] = useState<string | null>(null);
   const [newTopicOpen, setNewTopicOpen] = useState(false);
   const [draft, setDraft] = useState({ title: "", prompt: "" });
@@ -78,28 +102,60 @@ export function DiscussionsBoard({
         title: t.title,
         context: `Started by ${t.author}`,
         author: t.author,
-        local: true,
+        source: "local" as Source,
+      })),
+      ...(remote ?? []).map((t) => ({
+        id: t.id,
+        title: t.title,
+        context: `Started by ${t.author}`,
+        author: t.author,
+        source: "remote" as Source,
       })),
       ...seedThreads.map((t) => ({
         id: t.id,
         title: t.title,
         context: t.module,
         author: course.instructor,
-        local: false,
+        source: "seed" as Source,
       })),
     ],
-    [topics.items, seedThreads, course.instructor],
+    [topics.items, remote, seedThreads, course.instructor],
   );
 
-  const replyCount = (threadId: string) =>
-    replies.items.filter((r) => r.threadId === threadId).length;
+  const remoteTopicFor = (threadId: string) =>
+    remote?.find((t) => t.id === threadId);
 
-  function createTopic() {
+  const replyCount = (threadId: string) =>
+    replies.items.filter((r) => r.threadId === threadId).length +
+    (remoteTopicFor(threadId)?.replies.length ?? 0);
+
+  async function createTopic() {
     if (!draft.title.trim()) return;
+    const title = draft.title.trim();
+    const prompt = draft.prompt.trim() || "Share your thoughts below.";
+
+    // Post to the whole class when signed in; otherwise keep it on-device.
+    if (remote !== null && signedIn) {
+      const created = await addRemoteTopic(course.id, {
+        title,
+        prompt,
+        authorName: userName,
+      });
+      if (created) {
+        setRemote((prev) => [created, ...(prev ?? [])]);
+        setDraft({ title: "", prompt: "" });
+        setNewTopicOpen(false);
+        return;
+      }
+      setPubNote(
+        "Couldn't post to the class — saved on this device instead.",
+      );
+    }
+
     topics.add({
       id: newId(),
-      title: draft.title.trim(),
-      prompt: draft.prompt.trim() || "Share your thoughts below.",
+      title,
+      prompt,
       author: userName,
       createdAt: new Date().toISOString(),
     });
@@ -107,25 +163,71 @@ export function DiscussionsBoard({
     setNewTopicOpen(false);
   }
 
-  function postReply(threadId: string) {
+  async function postReply(threadId: string) {
     if (!composer.trim()) return;
+    const body = composer.trim();
+
+    // Replies to shared topics go to the class when signed in.
+    if (remoteTopicFor(threadId) && signedIn) {
+      const created = await addRemoteReply(threadId, {
+        body,
+        authorName: userName,
+      });
+      if (created) {
+        setRemote((prev) =>
+          (prev ?? []).map((t) =>
+            t.id === threadId ? { ...t, replies: [...t.replies, created] } : t,
+          ),
+        );
+        setComposer("");
+        return;
+      }
+    }
+
     replies.add({
       id: newId(),
       threadId,
       author: userName,
-      body: composer.trim(),
+      body,
       createdAt: new Date().toISOString(),
     });
     setComposer("");
   }
 
+  async function deleteReply(threadId: string, replyId: string, isRemote: boolean) {
+    if (isRemote) {
+      if (await removeRemoteReply(replyId)) {
+        setRemote((prev) =>
+          (prev ?? []).map((t) =>
+            t.id === threadId
+              ? { ...t, replies: t.replies.filter((r) => r.id !== replyId) }
+              : t,
+          ),
+        );
+      }
+      return;
+    }
+    replies.remove(replyId);
+  }
+
   // ----- Thread detail view -----
   if (selected) {
     const thread = threads.find((t) => t.id === selected);
-    const topic = topics.items.find((t) => t.id === selected);
-    const threadReplies = replies.items
-      .filter((r) => r.threadId === selected)
-      .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
+    const localTopic = topics.items.find((t) => t.id === selected);
+    const remoteTopic = remoteTopicFor(selected);
+    const prompt = localTopic?.prompt ?? remoteTopic?.prompt;
+    const threadReplies = [
+      ...(remoteTopic?.replies ?? []).map((r) => ({ ...r, remote: true })),
+      ...replies.items
+        .filter((r) => r.threadId === selected)
+        .map((r) => ({
+          id: r.id,
+          author: r.author,
+          body: r.body,
+          createdAt: r.createdAt,
+          remote: false,
+        })),
+    ].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
 
     if (!thread) {
       setSelected(null);
@@ -155,9 +257,9 @@ export function DiscussionsBoard({
               </p>
             </div>
           </div>
-          {topic?.prompt && (
+          {prompt && (
             <p className="mt-3 text-sm leading-relaxed text-ink-muted">
-              {topic.prompt}
+              {prompt}
             </p>
           )}
         </article>
@@ -194,7 +296,7 @@ export function DiscussionsBoard({
                 </div>
                 {mine && (
                   <button
-                    onClick={() => replies.remove(r.id)}
+                    onClick={() => deleteReply(selected, r.id, r.remote)}
                     className="focus-ring h-fit rounded p-1 text-ink-faint hover:text-rose-600"
                     aria-label="Delete reply"
                   >
@@ -244,6 +346,12 @@ export function DiscussionsBoard({
         }
       />
 
+      {pubNote && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {pubNote}
+        </p>
+      )}
+
       {threads.length === 0 ? (
         <div className="card flex flex-col items-center gap-2 p-10 text-center">
           <MessageSquare className="h-8 w-8 text-ink-faint" />
@@ -268,7 +376,8 @@ export function DiscussionsBoard({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-medium text-ink">{t.title}</h3>
-                    {t.local && <Badge tone="brand">New</Badge>}
+                    {t.source === "local" && <Badge tone="brand">New</Badge>}
+                    {t.source === "remote" && <Badge tone="info">Class</Badge>}
                   </div>
                   <p className="text-xs text-ink-faint">{t.context}</p>
                 </div>
