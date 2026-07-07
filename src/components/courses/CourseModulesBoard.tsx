@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock, Lock, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
@@ -10,6 +10,15 @@ import { Field, Input, Select } from "@/components/ui/form";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
+import {
+  addRemoteModule,
+  addRemoteModuleItem,
+  fetchRemoteModules,
+  removeRemoteModule,
+  removeRemoteModuleItem,
+  setRemoteModulePublished,
+} from "@/lib/course-content-db";
+import { getSignedInUserId } from "@/lib/study-guides-db";
 import { itemIcon, itemLabel } from "@/lib/itemMeta";
 import { formatDateTime } from "@/lib/utils";
 import type { Course, CourseModule, ModuleItem, ModuleItemType } from "@/lib/types";
@@ -42,17 +51,54 @@ export function CourseModulesBoard({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [published, setPublished] = useState(true);
+  const [pubNote, setPubNote] = useState<string | null>(null);
 
-  const rows = useMemo(
-    () => [
-      ...seed.map((m) => ({ m, local: false })),
-      ...authored.items.map((m) => ({ m, local: true })),
-    ],
-    [seed, authored.items],
-  );
+  // Shared modules (Supabase): published by signed-in teaching accounts,
+  // visible to every student on every device.
+  const [remote, setRemote] = useState<CourseModule[] | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteModules(course.id).then((r) => alive && setRemote(r));
+    getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
+    return () => {
+      alive = false;
+    };
+  }, [course.id]);
 
-  function createModule() {
+  type Source = "local" | "remote" | "seed";
+  const rows = useMemo(() => {
+    // The server-provided seed already merges published rows (data layer), so
+    // dedupe against the client's own fetch of the shared table.
+    const remoteIds = new Set((remote ?? []).map((m) => m.id));
+    return [
+      ...seed
+        .filter((m) => !remoteIds.has(m.id))
+        .map((m) => ({ m, source: "seed" as Source })),
+      ...(remote ?? []).map((m) => ({ m, source: "remote" as Source })),
+      ...authored.items.map((m) => ({ m, source: "local" as Source })),
+    ];
+  }, [seed, remote, authored.items]);
+
+  async function createModule() {
     if (!title.trim()) return;
+
+    // Publish to the shared table when signed in; a refused write (not a
+    // teaching account) falls back to this device with a note.
+    if (remote !== null && signedIn) {
+      const created = await addRemoteModule(course.id, title.trim(), published);
+      if (created) {
+        setRemote((prev) => [...(prev ?? []), created]);
+        setTitle("");
+        setPublished(true);
+        setOpen(false);
+        return;
+      }
+      setPubNote(
+        "Couldn't publish to all students (teaching account required) — saved on this device instead.",
+      );
+    }
+
     const mod: CourseModule = {
       id: newId(),
       courseId: course.id,
@@ -64,6 +110,67 @@ export function CourseModulesBoard({
     setTitle("");
     setPublished(true);
     setOpen(false);
+  }
+
+  /* -------- handlers that route to the shared table or local store ------- */
+
+  async function togglePublished(m: CourseModule, source: Source) {
+    if (source === "remote") {
+      if (await setRemoteModulePublished(m.id, !m.published)) {
+        setRemote((prev) =>
+          (prev ?? []).map((x) =>
+            x.id === m.id ? { ...x, published: !m.published } : x,
+          ),
+        );
+      }
+      return;
+    }
+    authored.update(m.id, { published: !m.published });
+  }
+
+  async function deleteModule(m: CourseModule, source: Source) {
+    if (source === "remote") {
+      if (await removeRemoteModule(m.id)) {
+        setRemote((prev) => (prev ?? []).filter((x) => x.id !== m.id));
+      }
+      return;
+    }
+    authored.remove(m.id);
+  }
+
+  async function addItem(m: CourseModule, source: Source, item: ModuleItem) {
+    if (source === "remote") {
+      const created = await addRemoteModuleItem(m.id, {
+        title: item.title,
+        type: item.type,
+        position: m.items.length,
+      });
+      if (created) {
+        setRemote((prev) =>
+          (prev ?? []).map((x) =>
+            x.id === m.id ? { ...x, items: [...x.items, created] } : x,
+          ),
+        );
+      }
+      return;
+    }
+    authored.update(m.id, { items: [...m.items, item] });
+  }
+
+  async function deleteItem(m: CourseModule, source: Source, itemId: string) {
+    if (source === "remote") {
+      if (await removeRemoteModuleItem(itemId)) {
+        setRemote((prev) =>
+          (prev ?? []).map((x) =>
+            x.id === m.id
+              ? { ...x, items: x.items.filter((it) => it.id !== itemId) }
+              : x,
+          ),
+        );
+      }
+      return;
+    }
+    authored.update(m.id, { items: m.items.filter((it) => it.id !== itemId) });
   }
 
   return (
@@ -80,25 +187,26 @@ export function CourseModulesBoard({
         }
       />
 
+      {pubNote && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {pubNote}
+        </p>
+      )}
+
       <div className="space-y-4">
-        {rows.map(({ m, local }) => (
+        {rows.map(({ m, source }) => (
           <ModuleSection
             key={m.id}
             module={m}
             color={course.color}
-            editable={teaching && local}
-            onTogglePublished={() =>
-              authored.update(m.id, { published: !m.published })
+            editable={
+              teaching && (source === "local" || (source === "remote" && signedIn))
             }
-            onDeleteModule={() => authored.remove(m.id)}
-            onAddItem={(item) =>
-              authored.update(m.id, { items: [...m.items, item] })
-            }
-            onDeleteItem={(itemId) =>
-              authored.update(m.id, {
-                items: m.items.filter((it) => it.id !== itemId),
-              })
-            }
+            shared={source === "remote"}
+            onTogglePublished={() => togglePublished(m, source)}
+            onDeleteModule={() => deleteModule(m, source)}
+            onAddItem={(item) => addItem(m, source, item)}
+            onDeleteItem={(itemId) => deleteItem(m, source, itemId)}
           />
         ))}
       </div>
@@ -145,6 +253,7 @@ function ModuleSection({
   module,
   color,
   editable,
+  shared,
   onTogglePublished,
   onDeleteModule,
   onAddItem,
@@ -153,6 +262,8 @@ function ModuleSection({
   module: CourseModule;
   color: string;
   editable: boolean;
+  /** True when this module lives in the shared database. */
+  shared?: boolean;
   onTogglePublished: () => void;
   onDeleteModule: () => void;
   onAddItem: (item: ModuleItem) => void;
@@ -176,6 +287,7 @@ function ModuleSection({
           {module.title}
         </h2>
         <div className="flex items-center gap-2">
+          {shared && <Badge tone="info">All students</Badge>}
           {module.published ? (
             <Badge tone="success">Published</Badge>
           ) : (
