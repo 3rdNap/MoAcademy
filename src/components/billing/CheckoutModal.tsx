@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, CreditCard, Landmark, Ticket } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, CreditCard, Landmark, ShieldCheck, Ticket } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/form";
@@ -48,6 +48,64 @@ export function CheckoutModal({
   const [method, setMethod] = useState<PaymentMethod>("card");
   const [paid, setPaid] = useState<Registration | null>(null);
 
+  // Real payments (PayFast) light up when the deployment has merchant keys.
+  const [payfast, setPayfast] = useState<{ enabled: boolean; sandbox: boolean }>({
+    enabled: false,
+    sandbox: true,
+  });
+  const [pfBusy, setPfBusy] = useState(false);
+  const [pfError, setPfError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    fetch("/api/payments/checkout")
+      .then((r) => r.json())
+      .then((d) => alive && d && setPayfast(d))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+
+  async function payOnline() {
+    if (!name.trim() || !email.trim() || pfBusy) return;
+    setPfBusy(true);
+    setPfError(null);
+    try {
+      const res = await fetch("/api/payments/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subjectIds: items.map((i) => i.id),
+          payer: { name: name.trim(), email: email.trim() },
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { url?: string; fields?: Record<string, string>; error?: string }
+        | null;
+      if (!res.ok || !data?.url || !data.fields) {
+        setPfError(data?.error ?? "Couldn't start the payment.");
+        return;
+      }
+      // Hand over to PayFast's secure page via a self-submitting form.
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = data.url;
+      for (const [k, v] of Object.entries(data.fields)) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = k;
+        input.value = v;
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
+    } catch {
+      setPfError("Couldn't start the payment.");
+      setPfBusy(false);
+    }
+  }
+
   function pay() {
     if (!name.trim() || !email.trim()) return;
     const reg = buildRegistration({
@@ -90,10 +148,20 @@ export function CheckoutModal({
             <Button variant="ghost" onClick={close}>
               Cancel
             </Button>
-            <Button onClick={pay} disabled={!name.trim() || !email.trim()}>
-              <CreditCard className="h-4 w-4" />
-              Pay {formatMoney(quote.total)}
-            </Button>
+            {payfast.enabled ? (
+              <Button
+                onClick={payOnline}
+                disabled={!name.trim() || !email.trim() || pfBusy}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                {pfBusy ? "Redirecting…" : `Pay ${formatMoney(quote.total)} securely`}
+              </Button>
+            ) : (
+              <Button onClick={pay} disabled={!name.trim() || !email.trim()}>
+                <CreditCard className="h-4 w-4" />
+                Pay {formatMoney(quote.total)}
+              </Button>
+            )}
           </>
         )
       }
@@ -156,37 +224,58 @@ export function CheckoutModal({
             </Field>
           </div>
 
-          <div>
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-faint">
-              Payment method
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {methods.map((m) => {
-                const Icon = m.icon;
-                const active = method === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => setMethod(m.id)}
-                    aria-pressed={active}
-                    className={cn(
-                      "focus-ring flex flex-col items-center gap-1 rounded-lg border p-2.5 text-xs font-medium transition-colors",
-                      active
-                        ? "border-brand-500 bg-brand-50 text-brand-700 ring-1 ring-brand-200"
-                        : "border-black/10 text-ink-muted hover:bg-surface-subtle",
-                    )}
-                  >
-                    <Icon className="h-5 w-5" />
-                    {paymentMethodLabel[m.id]}
-                  </button>
-                );
-              })}
+          {payfast.enabled ? (
+            <div className="flex items-start gap-2 rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs text-brand-900 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+              <p>
+                You&apos;ll pay securely on PayFast (card, Instant EFT and more).
+                Your card details never touch MoAcademy.
+                {payfast.sandbox && (
+                  <span className="font-semibold"> Sandbox test mode — no real money moves.</span>
+                )}
+              </p>
             </div>
-          </div>
+          ) : (
+            <>
+              <div>
+                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-faint">
+                  Payment method
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {methods.map((m) => {
+                    const Icon = m.icon;
+                    const active = method === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => setMethod(m.id)}
+                        aria-pressed={active}
+                        className={cn(
+                          "focus-ring flex flex-col items-center gap-1 rounded-lg border p-2.5 text-xs font-medium transition-colors",
+                          active
+                            ? "border-brand-500 bg-brand-50 text-brand-700 ring-1 ring-brand-200"
+                            : "border-black/10 text-ink-muted hover:bg-surface-subtle",
+                        )}
+                      >
+                        <Icon className="h-5 w-5" />
+                        {paymentMethodLabel[m.id]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-          <p className="text-center text-xs text-ink-faint">
-            This is a demo checkout — no real payment is processed.
-          </p>
+              <p className="text-center text-xs text-ink-faint">
+                This is a demo checkout — no real payment is processed.
+              </p>
+            </>
+          )}
+
+          {pfError && (
+            <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-500/10">
+              {pfError}
+            </p>
+          )}
         </div>
       )}
     </Modal>

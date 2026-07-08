@@ -53,7 +53,9 @@ export function RegistrationsList() {
     remove(id); // clears any local copy of the same invoice too
   }
 
-  const totalPaid = items.reduce((sum, r) => sum + r.total, 0);
+  const totalPaid = items
+    .filter((r) => r.status !== "pending")
+    .reduce((sum, r) => sum + r.total, 0);
 
   if (hydrated && items.length === 0) {
     return (
@@ -100,7 +102,11 @@ export function RegistrationsList() {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="font-semibold text-ink">{r.invoiceNo}</h2>
-                  <Badge tone="success">Paid</Badge>
+                  {r.status === "pending" ? (
+                    <Badge tone="warning">Processing</Badge>
+                  ) : (
+                    <Badge tone="success">Paid</Badge>
+                  )}
                 </div>
                 <p className="text-xs text-ink-faint">
                   {formatDate(r.createdAt)} · {r.term} ·{" "}

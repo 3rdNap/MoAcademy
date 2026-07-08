@@ -21,6 +21,7 @@ interface RegRow {
   subtotal_cents: number;
   discount_pct: number;
   total_cents: number;
+  status: string;
   created_at: string;
   payer_name: string;
   payer_email: string;
@@ -52,7 +53,7 @@ function mapRow(r: RegRow): Registration {
     discountPct: r.discount_pct,
     discountAmount: Math.round((subtotal - total) * 100) / 100,
     total,
-    status: "paid",
+    status: r.status === "pending" ? "pending" : "paid",
   };
 }
 
@@ -136,9 +137,18 @@ export async function removeRemoteRegistration(id: string): Promise<boolean> {
   }
 }
 
-/** Subject names across the signed-in student's registrations, or null. */
+/**
+ * Subject names across the student's PAID registrations, or null. Pending
+ * (payment-started-but-unconfirmed) registrations do NOT unlock content.
+ */
 export async function fetchRemoteRegisteredSubjects(): Promise<string[] | null> {
   const regs = await fetchRemoteRegistrations();
   if (regs === null) return null;
-  return [...new Set(regs.flatMap((r) => r.items.map((i) => i.name)))];
+  return [
+    ...new Set(
+      regs
+        .filter((r) => r.status === "paid")
+        .flatMap((r) => r.items.map((i) => i.name)),
+    ),
+  ];
 }
