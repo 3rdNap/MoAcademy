@@ -23,7 +23,8 @@ export interface Registration {
   discountPct: number;
   discountAmount: number;
   total: number;
-  status: "paid";
+  /** "pending" = online payment started, awaiting PayFast confirmation. */
+  status: "paid" | "pending";
 }
 
 export const paymentMethodLabel: Record<PaymentMethod, string> = {
