@@ -14,7 +14,7 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
  */
 export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-black/5 bg-surface/90 px-3 backdrop-blur sm:gap-3 sm:px-4 md:pl-6">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-black/5 bg-surface/90 px-3 backdrop-blur sm:gap-3 sm:px-4 md:pl-6 print:hidden">
       {/* Full logo lockup: mark | ACADEMY / SMART LEARNING. Slightly compact
           on phones so the whole bar fits a 360px viewport without forcing a
           horizontal overflow (which shrinks the entire page). */}

@@ -15,9 +15,20 @@ import {
   paymentMethodLabel,
   type Registration,
 } from "@/lib/billing/registration";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 export function RegistrationsList() {
+  // When printing, only the chosen invoice is shown (the rest get print:hidden).
+  const [printingId, setPrintingId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!printingId) return;
+    const t = setTimeout(() => {
+      window.print();
+      setPrintingId(null);
+    }, 60);
+    return () => clearTimeout(t);
+  }, [printingId]);
+
   const {
     items: local,
     remove,
@@ -81,7 +92,7 @@ export function RegistrationsList() {
   return (
     <div>
       {items.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl bg-surface-subtle px-4 py-3 text-sm">
+        <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl bg-surface-subtle px-4 py-3 text-sm print:hidden">
           <span className="text-ink-muted">
             <span className="font-semibold text-ink">{items.length}</span>{" "}
             registration{items.length === 1 ? "" : "s"}
@@ -97,7 +108,13 @@ export function RegistrationsList() {
 
       <div className="space-y-4">
         {items.map((r) => (
-          <article key={r.id} className="card overflow-hidden">
+          <article
+            key={r.id}
+            className={cn(
+              "card overflow-hidden print:border print:shadow-none",
+              printingId && printingId !== r.id && "print:hidden",
+            )}
+          >
             <header className="flex flex-wrap items-center justify-between gap-2 border-b border-black/5 bg-surface-subtle px-4 py-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -113,9 +130,9 @@ export function RegistrationsList() {
                   {paymentMethodLabel[r.method]}
                 </p>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 print:hidden">
                 <button
-                  onClick={() => window.print()}
+                  onClick={() => setPrintingId(r.id)}
                   className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/10 px-3 text-xs font-semibold text-ink hover:bg-surface"
                 >
                   <Printer className="h-3.5 w-3.5" /> Print

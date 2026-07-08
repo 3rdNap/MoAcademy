@@ -14,7 +14,7 @@ export function BillingTabs() {
   const pathname = usePathname();
 
   return (
-    <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-black/5">
+    <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-black/5 print:hidden">
       {tabs.map((t) => {
         const active =
           t.href === "/billing"
