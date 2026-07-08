@@ -16,13 +16,33 @@ const poppins = Poppins({
   display: "swap",
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://moacademy.vercel.app";
+const description =
+  "MoAcademy — Smart Learning. Courses, study guides, university plans, and Mo, your AI tutor, in one place. Built for students, instructors and parents.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: {
-    default: "MoAcademy",
+    default: "MoAcademy — Smart Learning",
     template: "%s · MoAcademy",
   },
-  description:
-    "MoAcademy — Smart Learning. A modern learning management system inspired by Brightspace and Canvas.",
+  description,
+  applicationName: "MoAcademy",
+  openGraph: {
+    title: "MoAcademy — Smart Learning",
+    description,
+    url: siteUrl,
+    siteName: "MoAcademy",
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "MoAcademy — Smart Learning" }],
+    locale: "en_ZA",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "MoAcademy — Smart Learning",
+    description,
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({
