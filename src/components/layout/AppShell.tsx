@@ -1,7 +1,7 @@
 import { GlobalNav } from "./GlobalNav";
 import { TopBar } from "./TopBar";
 import { RoleProvider } from "@/components/role/RoleProvider";
-import { getCourses, getCurrentUser } from "@/lib/data";
+import { getAuthState, getCourses, getCurrentUser } from "@/lib/data";
 
 /**
  * The persistent application chrome: global rail + top bar, with the routed
@@ -9,10 +9,14 @@ import { getCourses, getCurrentUser } from "@/lib/data";
  * app can adapt to the previewed role (student vs. instructor).
  */
 export async function AppShell({ children }: { children: React.ReactNode }) {
-  const [user, courses] = await Promise.all([getCurrentUser(), getCourses()]);
+  const [user, courses, auth] = await Promise.all([
+    getCurrentUser(),
+    getCourses(),
+    getAuthState(),
+  ]);
 
   return (
-    <RoleProvider>
+    <RoleProvider authedRole={auth.authed ? auth.role : null}>
       {/* First focusable element: keyboard/screen-reader users can jump
           straight past the nav to the page content. */}
       <a

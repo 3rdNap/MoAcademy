@@ -104,11 +104,29 @@ export default async function DashboardPage() {
                 Your courses
               </h2>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {courses.map((course) => (
-                <CourseCard key={course.id} course={course} />
-              ))}
-            </div>
+            {courses.length === 0 ? (
+              <div className="card flex flex-col items-start gap-2 p-6">
+                <p className="font-semibold text-ink">
+                  Let&apos;s get you started
+                </p>
+                <p className="text-sm text-ink-muted">
+                  Register for your subjects and they&apos;ll appear here as your
+                  courses, with their content, deadlines and study guides.
+                </p>
+                <Link
+                  href="/billing"
+                  className="focus-ring mt-1 inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+                >
+                  Register subjects
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {courses.map((course) => (
+                  <CourseCard key={course.id} course={course} />
+                ))}
+              </div>
+            )}
           </section>
 
           {/* Planning: roadmap deadlines + billing status (from the browser) */}
