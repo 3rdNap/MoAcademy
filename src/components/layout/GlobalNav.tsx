@@ -45,7 +45,7 @@ export function GlobalNav() {
       {/* Desktop rail */}
       <nav
         aria-label="Global"
-        className="fixed inset-y-0 left-0 z-40 hidden w-[84px] flex-col items-center bg-brand-950 py-4 text-white md:flex"
+        className="fixed inset-y-0 left-0 z-40 hidden w-[84px] flex-col items-center bg-brand-950 py-4 text-white md:flex print:!hidden"
       >
         <Link
           href="/dashboard"
@@ -163,7 +163,7 @@ function MobileBar({
       {/* Tab bar */}
       <nav
         aria-label="Global"
-        className="fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-black/10 bg-brand-950 px-2 py-1 text-white md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-black/10 bg-brand-950 px-2 py-1 text-white md:hidden print:hidden"
       >
         {primary.map((item) => {
           const active = isActive(item.href);

@@ -15,11 +15,11 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     <RoleProvider>
       <div className="min-h-full">
         <GlobalNav />
-        <div className="md:pl-[84px]">
+        <div className="md:pl-[84px] print:!pl-0">
           <TopBar user={user} courses={courses} />
           {/* Full-bleed content: no width cap, just a small even gutter on
               both sides so pages fill the screen. */}
-          <main className="w-full px-4 pb-24 pt-6 md:px-6 md:pb-10">
+          <main className="w-full px-4 pb-24 pt-6 md:px-6 md:pb-10 print:!p-0">
             {children}
           </main>
         </div>
