@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 /** "Viewing as" role preview switcher (Canvas-style Student View). */
 export function RoleSwitcher() {
-  const { role, setRole, hydrated } = useRole();
+  const { role, setRole, hydrated, locked } = useRole();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -19,6 +19,9 @@ export function RoleSwitcher() {
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
+
+  // Real signed-in accounts have a fixed role — no persona preview.
+  if (locked) return null;
 
   return (
     <div ref={ref} className="relative">

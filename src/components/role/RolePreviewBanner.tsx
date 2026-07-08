@@ -7,8 +7,10 @@ import { canTeach, isAdmin, isParent, roleLabel } from "@/lib/role";
 
 /** A dashboard banner shown while previewing a non-student role. */
 export function RolePreviewBanner() {
-  const { role, hydrated } = useRole();
+  const { role, hydrated, locked } = useRole();
   if (!hydrated) return null;
+  // No "you're previewing X" banner for real signed-in accounts.
+  if (locked) return null;
 
   if (isAdmin(role)) {
     return (

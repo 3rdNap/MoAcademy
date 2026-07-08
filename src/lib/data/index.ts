@@ -8,9 +8,61 @@ import type {
   Course,
   CourseModule,
   ModuleItem,
+  Role,
   User,
 } from "@/lib/types";
+import { subjects, type Subject } from "@/lib/billing/subjects";
+import { CURRENT_TERM } from "@/lib/billing/registration";
 import * as seed from "./seed";
+
+/**
+ * Whether a real user is signed in (Supabase Auth). Signed-in users see their
+ * own data; anonymous visitors get the bundled demo. cache() dedupes the auth
+ * lookup within a request.
+ */
+export const getAuthState = cache(
+  async (): Promise<{ authed: boolean; userId: string | null; role: Role }> => {
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) return { authed: false, userId: null, role: "student" };
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return { authed: false, userId: null, role: "student" };
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      return {
+        authed: true,
+        userId: user.id,
+        role: (profile?.role as Role) ?? "student",
+      };
+    } catch {
+      return { authed: false, userId: null, role: "student" };
+    }
+  },
+);
+
+/** A registered subject becomes the student's course. */
+function subjectToCourse(s: Subject): Course {
+  let h = 0;
+  for (let i = 0; i < s.id.length; i++) h = s.id.charCodeAt(i) + ((h << 5) - h);
+  return {
+    id: s.id,
+    code: s.code,
+    name: s.name,
+    shortName: s.name,
+    term: CURRENT_TERM,
+    description: `${s.name} · ${s.category}`,
+    color: `hsl(${Math.abs(h) % 360} 62% 45%)`,
+    instructor: "To be assigned",
+    credits: 1,
+    published: true,
+    progress: 0,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Single data-access surface for the app. Each function tries Supabase first
@@ -173,17 +225,48 @@ export const getCourses = cache(async (): Promise<Course[]> => {
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
-      const { data, error } = await supabase
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      // Admin-created courses (once any exist) are shown to everyone.
+      const { data: courseRows } = await supabase
         .from("courses")
         .select("*")
         .order("created_at");
-      if (!error && data && data.length) {
-        return (data as unknown as RawCourse[]).map(mapCourse);
+      if (courseRows && courseRows.length) {
+        return (courseRows as unknown as RawCourse[]).map(mapCourse);
+      }
+
+      // Signed-in user with no real courses yet: derive from their world
+      // instead of showing the demo. A student's courses are the subjects
+      // they've paid to register for; teaching roles see the full catalog.
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+        const role = (profile?.role as Role) ?? "student";
+        if (role === "instructor" || role === "admin") {
+          return subjects.map(subjectToCourse);
+        }
+        const { data: regs } = await supabase
+          .from("registrations")
+          .select("status, registration_items(code)")
+          .eq("user_id", user.id)
+          .eq("status", "paid");
+        const codes = new Set<string>();
+        for (const r of (regs ?? []) as { registration_items?: { code: string }[] }[]) {
+          for (const it of r.registration_items ?? []) codes.add(it.code);
+        }
+        return subjects.filter((s) => codes.has(s.code)).map(subjectToCourse);
       }
     } catch {
-      /* fall through */
+      /* fall through to demo */
     }
   }
+  // Anonymous / no backend: the bundled demo.
   return seed.courses;
 });
 
@@ -193,7 +276,9 @@ export async function getCourse(id: string): Promise<Course | undefined> {
 }
 
 export const getModules = cache(async (courseId: string): Promise<CourseModule[]> => {
-  const seedRows = seed.modules.filter((m) => m.courseId === courseId);
+  const { authed } = await getAuthState();
+  // Seed modules are demo-only; signed-in users see just real content.
+  const seedRows = authed ? [] : seed.modules.filter((m) => m.courseId === courseId);
 
   const supabase = await createSupabaseServerClient();
   if (supabase) {
@@ -231,24 +316,36 @@ export const getModules = cache(async (courseId: string): Promise<CourseModule[]
 });
 
 export const getAssignments = cache(async (courseId?: string): Promise<Assignment[]> => {
-  const seedRows = courseId
-    ? seed.assignments.filter((a) => a.courseId === courseId)
-    : seed.assignments;
+  const { authed } = await getAuthState();
+  const seedRows = authed
+    ? []
+    : courseId
+      ? seed.assignments.filter((a) => a.courseId === courseId)
+      : seed.assignments;
 
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
-      // Instructor-published rows reference seed courses via course_key
-      // (text), so they merge with the bundled assignments rather than
+      // Instructor-published rows reference courses via course_key (text), so
+      // they merge with the bundled assignments (demo only) rather than
       // replacing them. This also puts published deadlines into getUpcoming.
       let query = supabase.from("assignments").select("*").order("due_at");
-      if (courseId) query = query.eq("course_key", courseId);
+      if (courseId) {
+        query = query.eq("course_key", courseId);
+      } else if (authed) {
+        // Dashboard/calendar: scope to just the signed-in user's courses.
+        const ids = (await getCourses()).map((c) => c.id);
+        if (ids.length === 0) return [];
+        query = query.in("course_key", ids);
+      }
       const { data } = await query;
-      if (data && data.length) {
-        return [
-          ...(data as unknown as RawAssignment[]).map(mapAssignment),
-          ...seedRows,
-        ].sort((a, b) => +new Date(a.dueAt) - +new Date(b.dueAt));
+      const dbRows = (data ?? []).length
+        ? (data as unknown as RawAssignment[]).map(mapAssignment)
+        : [];
+      if (dbRows.length || seedRows.length) {
+        return [...dbRows, ...seedRows].sort(
+          (a, b) => +new Date(a.dueAt) - +new Date(b.dueAt),
+        );
       }
     } catch {
       /* fall through */
@@ -260,27 +357,37 @@ export const getAssignments = cache(async (courseId?: string): Promise<Assignmen
 export const getAnnouncements = cache(async (
   courseId?: string,
 ): Promise<Announcement[]> => {
-  const seedRows = courseId
-    ? seed.announcements.filter((a) => a.courseId === courseId)
-    : seed.announcements;
+  const { authed } = await getAuthState();
+  const seedRows = authed
+    ? []
+    : courseId
+      ? seed.announcements.filter((a) => a.courseId === courseId)
+      : seed.announcements;
 
   const supabase = await createSupabaseServerClient();
   if (supabase) {
     try {
-      // Instructor-published rows reference seed courses via course_key
-      // (text), so they merge with the bundled announcements rather than
-      // replacing them.
+      // Instructor-published rows reference courses via course_key (text), so
+      // they merge with the bundled announcements (demo only).
       let query = supabase
         .from("announcements")
         .select("*")
         .order("posted_at", { ascending: false });
-      if (courseId) query = query.eq("course_key", courseId);
+      if (courseId) {
+        query = query.eq("course_key", courseId);
+      } else if (authed) {
+        const ids = (await getCourses()).map((c) => c.id);
+        if (ids.length === 0) return [];
+        query = query.in("course_key", ids);
+      }
       const { data } = await query;
-      if (data && data.length) {
-        return [
-          ...(data as unknown as RawAnnouncement[]).map(mapAnnouncement),
-          ...seedRows,
-        ].sort((a, b) => +new Date(b.postedAt) - +new Date(a.postedAt));
+      const dbRows = (data ?? []).length
+        ? (data as unknown as RawAnnouncement[]).map(mapAnnouncement)
+        : [];
+      if (dbRows.length || seedRows.length) {
+        return [...dbRows, ...seedRows].sort(
+          (a, b) => +new Date(b.postedAt) - +new Date(a.postedAt),
+        );
       }
     } catch {
       /* fall through */
@@ -290,11 +397,13 @@ export const getAnnouncements = cache(async (
 });
 
 export async function getActivity(): Promise<ActivityEvent[]> {
-  return seed.activity;
+  const { authed } = await getAuthState();
+  return authed ? [] : seed.activity;
 }
 
 export async function getCalendar(): Promise<CalendarEvent[]> {
-  return seed.calendar;
+  const { authed } = await getAuthState();
+  return authed ? [] : seed.calendar;
 }
 
 /** Assignments due in the future, soonest first. */
