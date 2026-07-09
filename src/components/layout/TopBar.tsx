@@ -12,7 +12,15 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
  * Brightspace-style top bar: brand wordmark, course "waffle" switcher,
  * global search, notifications, and the account avatar.
  */
-export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
+export function TopBar({
+  user,
+  courses,
+  authed = false,
+}: {
+  user: User;
+  courses: Course[];
+  authed?: boolean;
+}) {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-black/5 bg-surface/90 px-3 backdrop-blur sm:gap-3 sm:px-4 md:pl-6 print:hidden">
       {/* Full logo lockup: mark | ACADEMY / SMART LEARNING. Slightly compact
@@ -45,7 +53,7 @@ export function TopBar({ user, courses }: { user: User; courses: Course[] }) {
         <GlobalSearch />
 
         <ThemeToggle />
-        <NotificationBell />
+        <NotificationBell authed={authed} />
 
         <Link
           href="/account"

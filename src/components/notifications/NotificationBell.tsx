@@ -31,7 +31,7 @@ interface Note {
   at: string;
 }
 
-export function NotificationBell() {
+export function NotificationBell({ authed = false }: { authed?: boolean }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -70,8 +70,8 @@ export function NotificationBell() {
   const notes = useMemo<Note[]>(() => {
     const list: Note[] = [];
 
-    // Unread inbox messages
-    for (const m of inboxSeed) {
+    // Unread inbox messages (demo only — real users have no seeded inbox).
+    for (const m of authed ? [] : inboxSeed) {
       if (m.unread && !read.items.some((r) => r.id === m.id)) {
         list.push({
           id: `msg-${m.id}`,
@@ -119,8 +119,9 @@ export function NotificationBell() {
       }
     }
 
-    // Assignments due within 7 days (seed, not yet graded)
-    for (const a of seed.assignments) {
+    // Assignments due within 7 days (demo seed only; real deadlines will come
+    // from published assignments once instructors add them).
+    for (const a of authed ? [] : seed.assignments) {
       const days = daysUntil(a.dueAt);
       if (a.status !== "graded" && days >= 0 && days <= 7) {
         const course = seed.courses.find((c) => c.id === a.courseId);
@@ -150,8 +151,8 @@ export function NotificationBell() {
       });
     }
 
-    // Recent grades
-    for (const ev of seed.activity) {
+    // Recent grades (demo seed only).
+    for (const ev of authed ? [] : seed.activity) {
       if (ev.kind === "grade") {
         list.push({
           id: `grade-${ev.id}`,
@@ -166,7 +167,7 @@ export function NotificationBell() {
     }
 
     return list.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-  }, [read.items, apps.items, scholarships.items, published]);
+  }, [read.items, apps.items, scholarships.items, published, authed]);
 
   const count = mounted ? notes.length : 0;
 
