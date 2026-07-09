@@ -45,6 +45,67 @@ export const getAuthState = cache(
   },
 );
 
+export interface AdminPerson {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  avatarColor: string;
+}
+
+export interface AdminOverview {
+  people: AdminPerson[];
+  counts: { students: number; instructors: number; admins: number };
+  registrations: { total: number; paid: number; revenueCents: number };
+}
+
+/**
+ * Institution-wide data for the Admin console — real people and registrations,
+ * readable only by a signed-in admin (enforced by RLS, see migration 0015).
+ * Returns null for anyone else, so the console falls back to the demo roster.
+ */
+export const getAdminOverview = cache(async (): Promise<AdminOverview | null> => {
+  const { authed, role } = await getAuthState();
+  if (!authed || role !== "admin") return null;
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return null;
+  try {
+    const [{ data: profs }, { data: regs }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id, full_name, email, role, avatar_color")
+        .order("created_at"),
+      supabase.from("registrations").select("status, total_cents"),
+    ]);
+    const people: AdminPerson[] = (profs ?? []).map((p) => ({
+      id: p.id as string,
+      name: (p.full_name as string) ?? "",
+      email: (p.email as string) ?? "",
+      role: (p.role as Role) ?? "student",
+      avatarColor: (p.avatar_color as string) ?? "#0284c7",
+    }));
+    const counts = { students: 0, instructors: 0, admins: 0 };
+    for (const p of people) {
+      if (p.role === "instructor") counts.instructors++;
+      else if (p.role === "admin") counts.admins++;
+      else counts.students++;
+    }
+    const rows = (regs ?? []) as { status: string; total_cents: number }[];
+    const paid = rows.filter((r) => r.status === "paid");
+    return {
+      people,
+      counts,
+      registrations: {
+        total: rows.length,
+        paid: paid.length,
+        revenueCents: paid.reduce((n, r) => n + (r.total_cents ?? 0), 0),
+      },
+    };
+  } catch {
+    return null;
+  }
+});
+
 /** A registered subject becomes the student's course. */
 function subjectToCourse(s: Subject): Course {
   let h = 0;
