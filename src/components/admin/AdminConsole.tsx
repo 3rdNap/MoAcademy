@@ -12,17 +12,22 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { useRole } from "@/components/role/RoleProvider";
-import { isAdmin } from "@/lib/role";
+import { isAdmin, roleLabel } from "@/lib/role";
 import { roster } from "@/lib/roster";
+import { formatMoney } from "@/lib/billing/pricing";
 import { initialsOf } from "@/lib/utils";
+import type { AdminOverview } from "@/lib/data";
 import type { Assignment, Course } from "@/lib/types";
 
 export function AdminConsole({
   courses,
   assignments,
+  overview,
 }: {
   courses: Course[];
   assignments: Assignment[];
+  /** Real institution data for a signed-in admin; null falls back to demo. */
+  overview: AdminOverview | null;
 }) {
   const { role, hydrated } = useRole();
 
@@ -45,25 +50,40 @@ export function AdminConsole({
     );
   }
 
-  const instructors = Array.from(new Set(courses.map((c) => c.instructor)));
   const published = courses.filter((c) => c.published).length;
-  const avgProgress = courses.length
-    ? Math.round(courses.reduce((n, c) => n + c.progress, 0) / courses.length)
-    : 0;
+
+  // Real institution data when a live admin is signed in; demo otherwise.
+  const studentCount = overview ? overview.counts.students : roster.length;
+  const instructorCount = overview
+    ? overview.counts.instructors
+    : Array.from(new Set(courses.map((c) => c.instructor))).length;
 
   return (
     <>
       <PageHeader
         title="Admin console"
-        subtitle="Institution-wide overview and management."
+        subtitle={
+          overview
+            ? "Live institution overview."
+            : "Demo overview — sign in as an admin to see real data."
+        }
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Stat icon={<Users className="h-5 w-5" />} label="Students" value={roster.length} tone="text-brand-600" />
-        <Stat icon={<GraduationCap className="h-5 w-5" />} label="Instructors" value={instructors.length} tone="text-sky-600" />
-        <Stat icon={<BookOpen className="h-5 w-5" />} label="Courses" value={`${published}/${courses.length}`} tone="text-emerald-600" />
-        <Stat icon={<ClipboardList className="h-5 w-5" />} label="Assignments" value={assignments.length} tone="text-amber-600" />
-        <Stat icon={<TrendingUp className="h-5 w-5" />} label="Avg progress" value={`${avgProgress}%`} tone="text-violet-600" />
+        <Stat icon={<Users className="h-5 w-5" />} label="Students" value={studentCount} tone="text-brand-600" />
+        <Stat icon={<GraduationCap className="h-5 w-5" />} label="Instructors" value={instructorCount} tone="text-sky-600" />
+        <Stat icon={<BookOpen className="h-5 w-5" />} label="Subjects" value={`${published}/${courses.length}`} tone="text-emerald-600" />
+        {overview ? (
+          <>
+            <Stat icon={<ClipboardList className="h-5 w-5" />} label="Registrations" value={overview.registrations.paid} tone="text-amber-600" />
+            <Stat icon={<TrendingUp className="h-5 w-5" />} label="Revenue" value={formatMoney(overview.registrations.revenueCents / 100)} tone="text-violet-600" />
+          </>
+        ) : (
+          <>
+            <Stat icon={<ClipboardList className="h-5 w-5" />} label="Assignments" value={assignments.length} tone="text-amber-600" />
+            <Stat icon={<TrendingUp className="h-5 w-5" />} label="Avg progress" value="—" tone="text-violet-600" />
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -112,16 +132,25 @@ export function AdminConsole({
 
         {/* People */}
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-faint">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
             People
+            {overview && <Badge tone="neutral">{overview.people.length}</Badge>}
           </h2>
           <div className="card divide-y divide-black/5">
-            {instructors.map((name) => (
-              <Person key={name} name={name} role="Instructor" />
-            ))}
-            {roster.map((s) => (
-              <Person key={s.id} name={s.name} role="Student" />
-            ))}
+            {overview
+              ? overview.people.map((p) => (
+                  <RealPerson key={p.id} person={p} />
+                ))
+              : [
+                  ...Array.from(new Set(courses.map((c) => c.instructor))).map(
+                    (name) => (
+                      <Person key={name} name={name} role="Instructor" />
+                    ),
+                  ),
+                  ...roster.map((s) => (
+                    <Person key={s.id} name={s.name} role="Student" />
+                  )),
+                ]}
           </div>
         </section>
       </div>
@@ -163,6 +192,31 @@ function Person({ name, role }: { name: string; role: "Instructor" | "Student" }
       />
       <p className="flex-1 text-sm font-medium text-ink">{name}</p>
       <Badge tone={role === "Instructor" ? "brand" : "neutral"}>{role}</Badge>
+    </div>
+  );
+}
+
+function RealPerson({ person }: { person: AdminOverview["people"][number] }) {
+  const tone =
+    person.role === "admin"
+      ? "brand"
+      : person.role === "instructor"
+        ? "info"
+        : "neutral";
+  return (
+    <div className="flex items-center gap-3 p-3">
+      <Avatar
+        initials={initialsOf(person.name || person.email)}
+        color={person.avatarColor}
+        size={32}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-ink">
+          {person.name || "—"}
+        </p>
+        <p className="truncate text-xs text-ink-faint">{person.email}</p>
+      </div>
+      <Badge tone={tone}>{roleLabel[person.role]}</Badge>
     </div>
   );
 }
