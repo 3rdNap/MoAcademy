@@ -26,7 +26,12 @@ export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
     setNotice(null);
     const supabase = createSupabaseBrowserClient();
     if (!supabase) {
-      setError("Authentication isn't configured (missing Supabase env vars).");
+      setError(
+        "Sign-in isn't available yet: this deployment hasn't picked up the " +
+          "Supabase keys. Check /api/status — if it shows \"supabase\": false, " +
+          "add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in " +
+          "Vercel and redeploy.",
+      );
       return;
     }
     setBusy(true);
