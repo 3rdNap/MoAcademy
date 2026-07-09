@@ -52,9 +52,13 @@ export default async function DashboardPage() {
       <RolePreviewBanner />
       <PageHeader
         title={`${greeting()}, ${user.name.split(" ")[0]}`}
-        subtitle={`You're enrolled in ${courses.length} courses this term · ${formatDate(
-          new Date().toISOString(),
-        )}`}
+        subtitle={
+          courses.length === 0
+            ? `Welcome to MoAcademy · ${formatDate(new Date().toISOString())}`
+            : `You're enrolled in ${courses.length} course${
+                courses.length === 1 ? "" : "s"
+              } this term · ${formatDate(new Date().toISOString())}`
+        }
         action={
           <Link
             href="/courses"
