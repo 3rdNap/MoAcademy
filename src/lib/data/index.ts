@@ -53,10 +53,22 @@ export interface AdminPerson {
   avatarColor: string;
 }
 
+export interface AdminRegistration {
+  id: string;
+  invoiceNo: string;
+  payerName: string;
+  payerEmail: string;
+  status: string;
+  totalCents: number;
+  createdAt: string;
+  subjects: string[];
+}
+
 export interface AdminOverview {
   people: AdminPerson[];
   counts: { students: number; instructors: number; admins: number };
-  registrations: { total: number; paid: number; revenueCents: number };
+  summary: { total: number; paid: number; revenueCents: number };
+  registrations: AdminRegistration[];
 }
 
 /**
@@ -75,7 +87,12 @@ export const getAdminOverview = cache(async (): Promise<AdminOverview | null> =>
         .from("profiles")
         .select("id, full_name, email, role, avatar_color")
         .order("created_at"),
-      supabase.from("registrations").select("status, total_cents"),
+      supabase
+        .from("registrations")
+        .select(
+          "id, invoice_no, payer_name, payer_email, status, total_cents, created_at, registration_items(name)",
+        )
+        .order("created_at", { ascending: false }),
     ]);
     const people: AdminPerson[] = (profs ?? []).map((p) => ({
       id: p.id as string,
@@ -90,16 +107,38 @@ export const getAdminOverview = cache(async (): Promise<AdminOverview | null> =>
       else if (p.role === "admin") counts.admins++;
       else counts.students++;
     }
-    const rows = (regs ?? []) as { status: string; total_cents: number }[];
-    const paid = rows.filter((r) => r.status === "paid");
+    type RegRow = {
+      id: string;
+      invoice_no: string;
+      payer_name: string;
+      payer_email: string;
+      status: string;
+      total_cents: number;
+      created_at: string;
+      registration_items: { name: string }[] | null;
+    };
+    const registrations: AdminRegistration[] = ((regs ?? []) as RegRow[]).map(
+      (r) => ({
+        id: r.id,
+        invoiceNo: r.invoice_no,
+        payerName: r.payer_name,
+        payerEmail: r.payer_email,
+        status: r.status,
+        totalCents: r.total_cents ?? 0,
+        createdAt: r.created_at,
+        subjects: (r.registration_items ?? []).map((i) => i.name),
+      }),
+    );
+    const paid = registrations.filter((r) => r.status === "paid");
     return {
       people,
       counts,
-      registrations: {
-        total: rows.length,
+      summary: {
+        total: registrations.length,
         paid: paid.length,
-        revenueCents: paid.reduce((n, r) => n + (r.total_cents ?? 0), 0),
+        revenueCents: paid.reduce((n, r) => n + r.totalCents, 0),
       },
+      registrations,
     };
   } catch {
     return null;

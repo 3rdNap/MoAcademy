@@ -15,7 +15,7 @@ import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin, roleLabel } from "@/lib/role";
 import { roster } from "@/lib/roster";
 import { formatMoney } from "@/lib/billing/pricing";
-import { initialsOf } from "@/lib/utils";
+import { formatDate, initialsOf } from "@/lib/utils";
 import type { AdminOverview } from "@/lib/data";
 import type { Assignment, Course } from "@/lib/types";
 
@@ -75,8 +75,8 @@ export function AdminConsole({
         <Stat icon={<BookOpen className="h-5 w-5" />} label="Subjects" value={`${published}/${courses.length}`} tone="text-emerald-600" />
         {overview ? (
           <>
-            <Stat icon={<ClipboardList className="h-5 w-5" />} label="Registrations" value={overview.registrations.paid} tone="text-amber-600" />
-            <Stat icon={<TrendingUp className="h-5 w-5" />} label="Revenue" value={formatMoney(overview.registrations.revenueCents / 100)} tone="text-violet-600" />
+            <Stat icon={<ClipboardList className="h-5 w-5" />} label="Registrations" value={overview.summary.paid} tone="text-amber-600" />
+            <Stat icon={<TrendingUp className="h-5 w-5" />} label="Revenue" value={formatMoney(overview.summary.revenueCents / 100)} tone="text-violet-600" />
           </>
         ) : (
           <>
@@ -154,6 +154,63 @@ export function AdminConsole({
           </div>
         </section>
       </div>
+
+      {/* Registrations — real paid/pending invoices across the institution */}
+      {overview && (
+        <section className="mt-8">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
+            Registrations
+            <Badge tone="neutral">{overview.registrations.length}</Badge>
+          </h2>
+          {overview.registrations.length === 0 ? (
+            <div className="card p-6 text-sm text-ink-muted">
+              No registrations yet. They&apos;ll appear here as students pay.
+            </div>
+          ) : (
+            <div className="card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-black/5 bg-surface-subtle text-left text-xs uppercase tracking-wide text-ink-faint">
+                    <th className="px-4 py-3 font-semibold">Invoice</th>
+                    <th className="px-4 py-3 font-semibold">Student</th>
+                    <th className="px-4 py-3 font-semibold">Subjects</th>
+                    <th className="px-4 py-3 font-semibold">Total</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 font-semibold">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/5">
+                  {overview.registrations.map((r) => (
+                    <tr key={r.id} className="hover:bg-surface-subtle">
+                      <td className="px-4 py-3 font-medium text-ink">
+                        {r.invoiceNo || "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-ink">{r.payerName || "—"}</p>
+                        <p className="text-xs text-ink-faint">{r.payerEmail}</p>
+                      </td>
+                      <td className="px-4 py-3 text-ink-muted">
+                        {r.subjects.length ? r.subjects.join(", ") : "—"}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-ink">
+                        {formatMoney(r.totalCents / 100)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={r.status === "paid" ? "success" : "warning"}>
+                          {r.status === "paid" ? "Paid" : "Processing"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-ink-faint">
+                        {formatDate(r.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
     </>
   );
 }
