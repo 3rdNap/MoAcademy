@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   BookOpen,
   ClipboardList,
@@ -23,13 +25,43 @@ export function AdminConsole({
   courses,
   assignments,
   overview,
+  currentUserId,
 }: {
   courses: Course[];
   assignments: Assignment[];
   /** Real institution data for a signed-in admin; null falls back to demo. */
   overview: AdminOverview | null;
+  currentUserId?: string;
 }) {
   const { role, hydrated } = useRole();
+  const router = useRouter();
+
+  // Role editing needs the server-only service key; probe once.
+  const [roleMgmt, setRoleMgmt] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/status")
+      .then((r) => r.json())
+      .then((d) => alive && setRoleMgmt(Boolean(d?.roleManagement)))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function changeRole(userId: string, next: string): Promise<string | null> {
+    const res = await fetch("/api/admin/set-role", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, role: next }),
+    });
+    if (res.ok) {
+      router.refresh();
+      return null;
+    }
+    const data = (await res.json().catch(() => null)) as { error?: string } | null;
+    return data?.error ?? "Couldn't update the role.";
+  }
 
   if (!hydrated) return null;
 
@@ -139,7 +171,12 @@ export function AdminConsole({
           <div className="card divide-y divide-black/5">
             {overview
               ? overview.people.map((p) => (
-                  <RealPerson key={p.id} person={p} />
+                  <RealPerson
+                    key={p.id}
+                    person={p}
+                    editable={roleMgmt && p.id !== currentUserId}
+                    onChangeRole={(next) => changeRole(p.id, next)}
+                  />
                 ))
               : [
                   ...Array.from(new Set(courses.map((c) => c.instructor))).map(
@@ -253,13 +290,33 @@ function Person({ name, role }: { name: string; role: "Instructor" | "Student" }
   );
 }
 
-function RealPerson({ person }: { person: AdminOverview["people"][number] }) {
+function RealPerson({
+  person,
+  editable,
+  onChangeRole,
+}: {
+  person: AdminOverview["people"][number];
+  editable: boolean;
+  onChangeRole: (next: string) => Promise<string | null>;
+}) {
   const tone =
     person.role === "admin"
       ? "brand"
       : person.role === "instructor"
         ? "info"
         : "neutral";
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSelect(next: string) {
+    if (next === person.role || busy) return;
+    setBusy(true);
+    setError(null);
+    const err = await onChangeRole(next);
+    if (err) setError(err);
+    setBusy(false);
+  }
+
   return (
     <div className="flex items-center gap-3 p-3">
       <Avatar
@@ -272,8 +329,23 @@ function RealPerson({ person }: { person: AdminOverview["people"][number] }) {
           {person.name || "—"}
         </p>
         <p className="truncate text-xs text-ink-faint">{person.email}</p>
+        {error && <p className="text-xs text-rose-600">{error}</p>}
       </div>
-      <Badge tone={tone}>{roleLabel[person.role]}</Badge>
+      {editable ? (
+        <select
+          value={person.role}
+          disabled={busy}
+          onChange={(e) => onSelect(e.target.value)}
+          aria-label={`Role for ${person.name || person.email}`}
+          className="focus-ring rounded-lg border border-black/10 bg-surface px-2 py-1 text-xs font-medium text-ink disabled:opacity-50 dark:border-white/10"
+        >
+          <option value="student">Student</option>
+          <option value="instructor">Instructor</option>
+          <option value="admin">Admin</option>
+        </select>
+      ) : (
+        <Badge tone={tone}>{roleLabel[person.role]}</Badge>
+      )}
     </div>
   );
 }
