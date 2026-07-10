@@ -14,6 +14,8 @@ export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
 
   const [name, setName] = useState("");
   const [role, setRole] = useState<"student" | "instructor">("student");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianEmail, setGuardianEmail] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -37,10 +39,18 @@ export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
     setBusy(true);
     try {
       if (isSignup) {
+        const metadata: Record<string, string> = { full_name: name, role };
+        // Students may name a parent/guardian. We stash it on the student's own
+        // account; a guardian account is provisioned from the dashboard once
+        // the student is signed in (see GuardianProvisioner).
+        if (role === "student" && guardianEmail.trim()) {
+          metadata.guardian_name = guardianName.trim();
+          metadata.guardian_email = guardianEmail.trim();
+        }
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: name, role } },
+          options: { data: metadata },
         });
         if (error) throw error;
         // If email confirmation is on, there's no session yet.
@@ -104,6 +114,33 @@ export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
                   <option value="instructor">Instructor</option>
                 </Select>
               </div>
+              {role === "student" && (
+                <div className="rounded-lg border border-black/10 bg-surface-subtle p-3 dark:border-white/10">
+                  <p className="mb-2 text-xs font-medium text-ink-muted">
+                    Parent / guardian (optional) — we&apos;ll create a family
+                    account so they can follow your progress.
+                  </p>
+                  <div className="space-y-2">
+                    <Field label="Guardian name">
+                      <Input
+                        value={guardianName}
+                        onChange={(e) => setGuardianName(e.target.value)}
+                        placeholder="Thandi Sefako"
+                        autoComplete="off"
+                      />
+                    </Field>
+                    <Field label="Guardian email">
+                      <Input
+                        type="email"
+                        value={guardianEmail}
+                        onChange={(e) => setGuardianEmail(e.target.value)}
+                        placeholder="parent@example.com"
+                        autoComplete="off"
+                      />
+                    </Field>
+                  </div>
+                </div>
+              )}
             </>
           )}
           <Field label="Email">

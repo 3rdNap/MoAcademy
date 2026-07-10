@@ -145,6 +145,113 @@ export const getAdminOverview = cache(async (): Promise<AdminOverview | null> =>
   }
 });
 
+export interface GuardianChild {
+  id: string;
+  name: string;
+  email: string;
+  avatarColor: string;
+}
+
+/**
+ * The students a signed-in parent/guardian is linked to (migration 0017). RLS
+ * limits this to their own children; returns [] for anyone else, so the family
+ * view falls back to the demo.
+ */
+export const getGuardianChildren = cache(async (): Promise<GuardianChild[]> => {
+  const { authed, userId, role } = await getAuthState();
+  if (!authed || role !== "parent" || !userId) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data: links } = await supabase
+      .from("guardian_links")
+      .select("student_id")
+      .eq("guardian_id", userId);
+    const ids = (links ?? []).map((l) => l.student_id as string);
+    if (ids.length === 0) return [];
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, avatar_color")
+      .in("id", ids);
+    return (profs ?? []).map((p) => ({
+      id: p.id as string,
+      name: (p.full_name as string) ?? "",
+      email: (p.email as string) ?? "",
+      avatarColor: (p.avatar_color as string) ?? "#0284c7",
+    }));
+  } catch {
+    return [];
+  }
+});
+
+/**
+ * A linked child's courses — the subjects they've paid to register for, mapped
+ * the same way as the student's own dashboard. RLS (migration 0017) only lets a
+ * guardian read registrations belonging to their linked students.
+ */
+export async function getChildCourses(childId: string): Promise<Course[]> {
+  const { authed, role } = await getAuthState();
+  if (!authed || role !== "parent") return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data: regs } = await supabase
+      .from("registrations")
+      .select("status, registration_items(code)")
+      .eq("user_id", childId)
+      .eq("status", "paid");
+    const codes = new Set<string>();
+    for (const r of (regs ?? []) as { registration_items?: { code: string }[] }[]) {
+      for (const it of r.registration_items ?? []) codes.add(it.code);
+    }
+    return subjects.filter((s) => codes.has(s.code)).map(subjectToCourse);
+  } catch {
+    return [];
+  }
+}
+
+/** Published assignments across a set of course ids (course_key), soonest first. */
+export async function getAssignmentsForCourses(
+  courseIds: string[],
+): Promise<Assignment[]> {
+  if (courseIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("assignments")
+      .select("*")
+      .in("course_key", courseIds)
+      .order("due_at");
+    return (data ?? []).length
+      ? (data as unknown as RawAssignment[]).map(mapAssignment)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Published announcements across a set of course ids (course_key), newest first. */
+export async function getAnnouncementsForCourses(
+  courseIds: string[],
+): Promise<Announcement[]> {
+  if (courseIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("announcements")
+      .select("*")
+      .in("course_key", courseIds)
+      .order("posted_at", { ascending: false });
+    return (data ?? []).length
+      ? (data as unknown as RawAnnouncement[]).map(mapAnnouncement)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 /** A registered subject becomes the student's course. */
 function subjectToCourse(s: Subject): Course {
   let h = 0;

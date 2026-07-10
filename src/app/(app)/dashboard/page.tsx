@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   Activity,
   BookOpen,
@@ -23,6 +24,7 @@ import { BillingStatusWidget } from "@/components/dashboard/BillingStatusWidget"
 import { PinnedCourses } from "@/components/dashboard/PinnedCourses";
 import { StudyPlanWidget } from "@/components/dashboard/StudyPlanWidget";
 import { RolePreviewBanner } from "@/components/role/RolePreviewBanner";
+import { GuardianProvisioner } from "@/components/family/GuardianProvisioner";
 import {
   getActivity,
   getAdminOverview,
@@ -56,6 +58,11 @@ export default async function DashboardPage() {
     return <AdminHome name={user.name} overview={overview} />;
   }
 
+  // Parents/guardians land on their family view (their child's progress).
+  if (auth.authed && auth.role === "parent") {
+    redirect("/family");
+  }
+
   const [user, courses, upcoming, activity, announcements] = await Promise.all([
     getCurrentUser(),
     getCourses(),
@@ -71,6 +78,7 @@ export default async function DashboardPage() {
   return (
     <>
       <RolePreviewBanner />
+      <GuardianProvisioner />
       <PageHeader
         title={`${greeting()}, ${user.name.split(" ")[0]}`}
         subtitle={
