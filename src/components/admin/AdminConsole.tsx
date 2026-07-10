@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   BookOpen,
   ClipboardList,
+  Download,
   GraduationCap,
   Search,
   ShieldCheck,
@@ -226,10 +227,20 @@ export function AdminConsole({
       {/* Registrations — real paid/pending invoices across the institution */}
       {overview && (
         <section className="mt-8">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
-            Registrations
-            <Badge tone="neutral">{overview.registrations.length}</Badge>
-          </h2>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
+              Registrations
+              <Badge tone="neutral">{overview.registrations.length}</Badge>
+            </h2>
+            {overview.registrations.length > 0 && (
+              <button
+                onClick={() => exportRegistrationsCsv(overview.registrations)}
+                className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/10 px-3 text-xs font-semibold text-ink hover:bg-surface-subtle dark:border-white/10"
+              >
+                <Download className="h-3.5 w-3.5" /> Export CSV
+              </button>
+            )}
+          </div>
           {overview.registrations.length === 0 ? (
             <div className="card p-6 text-sm text-ink-muted">
               No registrations yet. They&apos;ll appear here as students pay.
@@ -281,6 +292,46 @@ export function AdminConsole({
       )}
     </>
   );
+}
+
+/** Build a CSV from the registrations and trigger a browser download. */
+function exportRegistrationsCsv(
+  registrations: AdminOverview["registrations"],
+): void {
+  const esc = (v: string | number) => {
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = [
+    "Invoice",
+    "Student",
+    "Email",
+    "Subjects",
+    "Total (ZAR)",
+    "Status",
+    "Date",
+  ];
+  const rows = registrations.map((r) => [
+    r.invoiceNo,
+    r.payerName,
+    r.payerEmail,
+    r.subjects.join("; "),
+    (r.totalCents / 100).toFixed(2),
+    r.status,
+    new Date(r.createdAt).toISOString().slice(0, 10),
+  ]);
+  const csv = [header, ...rows]
+    .map((row) => row.map(esc).join(","))
+    .join("\r\n");
+  const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `moacademy-registrations-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function Stat({
