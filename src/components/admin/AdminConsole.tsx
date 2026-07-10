@@ -6,6 +6,7 @@ import {
   BookOpen,
   ClipboardList,
   GraduationCap,
+  Search,
   ShieldCheck,
   TrendingUp,
   Users,
@@ -35,6 +36,7 @@ export function AdminConsole({
 }) {
   const { role, hydrated } = useRole();
   const router = useRouter();
+  const [peopleQuery, setPeopleQuery] = useState("");
 
   // Role editing needs the server-only service key; probe once.
   const [roleMgmt, setRoleMgmt] = useState(false);
@@ -83,6 +85,19 @@ export function AdminConsole({
   }
 
   const published = courses.filter((c) => c.published).length;
+
+  // Filter the real People list by name / email / role.
+  const q = peopleQuery.trim().toLowerCase();
+  const filteredPeople = overview
+    ? q
+      ? overview.people.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            p.email.toLowerCase().includes(q) ||
+            p.role.includes(q),
+        )
+      : overview.people
+    : [];
 
   // Real institution data when a live admin is signed in; demo otherwise.
   const studentCount = overview ? overview.counts.students : roster.length;
@@ -168,15 +183,31 @@ export function AdminConsole({
             People
             {overview && <Badge tone="neutral">{overview.people.length}</Badge>}
           </h2>
+          {overview && overview.people.length > 5 && (
+            <div className="relative mb-2">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+              <input
+                value={peopleQuery}
+                onChange={(e) => setPeopleQuery(e.target.value)}
+                placeholder="Search name, email or role…"
+                aria-label="Search people"
+                className="focus-ring w-full rounded-lg border border-black/10 bg-surface py-2 pl-9 pr-3 text-sm text-ink placeholder:text-ink-faint dark:border-white/10"
+              />
+            </div>
+          )}
           <div className="card divide-y divide-black/5">
             {overview
-              ? overview.people.map((p) => (
-                  <RealPerson
-                    key={p.id}
-                    person={p}
-                    editable={roleMgmt && p.id !== currentUserId}
-                    onChangeRole={(next) => changeRole(p.id, next)}
-                  />
+              ? (filteredPeople.length === 0 ? (
+                  <p className="p-4 text-sm text-ink-faint">No people match “{peopleQuery}”.</p>
+                ) : (
+                  filteredPeople.map((p) => (
+                    <RealPerson
+                      key={p.id}
+                      person={p}
+                      editable={roleMgmt && p.id !== currentUserId}
+                      onChangeRole={(next) => changeRole(p.id, next)}
+                    />
+                  ))
                 ))
               : [
                   ...Array.from(new Set(courses.map((c) => c.instructor))).map(
