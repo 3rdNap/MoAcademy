@@ -195,6 +195,21 @@ export async function getChildCourses(childId: string): Promise<Course[]> {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return [];
   try {
+    // Institutional enrolments first (admin-issued), then legacy paid regs.
+    try {
+      const { data: enr } = await supabase
+        .from("subject_enrollments")
+        .select("subject_code")
+        .eq("user_id", childId)
+        .eq("role", "student")
+        .eq("term", CURRENT_TERM);
+      const enrolled = new Set((enr ?? []).map((r) => r.subject_code as string));
+      if (enrolled.size > 0) {
+        return subjects.filter((s) => enrolled.has(s.code)).map(subjectToCourse);
+      }
+    } catch {
+      /* subject_enrollments not migrated yet */
+    }
     const { data: regs } = await supabase
       .from("registrations")
       .select("status, registration_items(code)")
@@ -446,8 +461,7 @@ export const getCourses = cache(async (): Promise<Course[]> => {
       }
 
       // Signed-in user with no real courses yet: derive from their world
-      // instead of showing the demo. A student's courses are the subjects
-      // they've paid to register for; teaching roles see the full catalog.
+      // instead of showing the demo.
       if (user) {
         const { data: profile } = await supabase
           .from("profiles")
@@ -455,9 +469,30 @@ export const getCourses = cache(async (): Promise<Course[]> => {
           .eq("id", user.id)
           .maybeSingle();
         const role = (profile?.role as Role) ?? "student";
-        if (role === "instructor" || role === "admin") {
-          return subjects.map(subjectToCourse);
+        if (role === "admin") return subjects.map(subjectToCourse);
+
+        // Institutional model: courses are the subjects an admin has enrolled
+        // this person into (as student, or as instructor if they teach it).
+        const enrolRole = role === "instructor" ? "instructor" : "student";
+        try {
+          const { data: enr } = await supabase
+            .from("subject_enrollments")
+            .select("subject_code")
+            .eq("user_id", user.id)
+            .eq("role", enrolRole)
+            .eq("term", CURRENT_TERM);
+          const enrolled = new Set((enr ?? []).map((r) => r.subject_code as string));
+          if (enrolled.size > 0) {
+            return subjects.filter((s) => enrolled.has(s.code)).map(subjectToCourse);
+          }
+        } catch {
+          /* subject_enrollments not migrated yet — fall through */
         }
+
+        // Instructors with no explicit teaching assignment see the catalogue.
+        if (role === "instructor") return subjects.map(subjectToCourse);
+
+        // Legacy fallback: subjects a student previously paid to register for.
         const { data: regs } = await supabase
           .from("registrations")
           .select("status, registration_items(code)")

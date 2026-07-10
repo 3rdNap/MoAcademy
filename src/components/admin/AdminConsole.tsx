@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { AddPersonButton } from "@/components/admin/AddPersonButton";
+import { ManageSubjectsButton } from "@/components/admin/ManageSubjectsButton";
 import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin, roleLabel } from "@/lib/role";
 import { roster } from "@/lib/roster";
@@ -210,6 +211,7 @@ export function AdminConsole({
                       key={p.id}
                       person={p}
                       editable={roleMgmt && p.id !== currentUserId}
+                      manageEnrollment={roleMgmt}
                       onChangeRole={(next) => changeRole(p.id, next)}
                     />
                   ))
@@ -379,10 +381,12 @@ function Person({ name, role }: { name: string; role: "Instructor" | "Student" }
 function RealPerson({
   person,
   editable,
+  manageEnrollment,
   onChangeRole,
 }: {
   person: AdminOverview["people"][number];
   editable: boolean;
+  manageEnrollment: boolean;
   onChangeRole: (next: string) => Promise<string | null>;
 }) {
   const tone =
@@ -403,6 +407,8 @@ function RealPerson({
     setBusy(false);
   }
 
+  const canEnroll = person.role === "student" || person.role === "instructor";
+
   return (
     <div className="flex items-center gap-3 p-3">
       <Avatar
@@ -416,6 +422,16 @@ function RealPerson({
         </p>
         <p className="truncate text-xs text-ink-faint">{person.email}</p>
         {error && <p className="text-xs text-rose-600">{error}</p>}
+        {canEnroll && (
+          <div className="mt-1">
+            <ManageSubjectsButton
+              userId={person.id}
+              name={person.name || person.email}
+              role={person.role as "student" | "instructor"}
+              enabled={manageEnrollment}
+            />
+          </div>
+        )}
       </div>
       {editable ? (
         <select
