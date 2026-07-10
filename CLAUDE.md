@@ -44,3 +44,25 @@ appear in the static prerender — that's expected, not a bug.
   are the path to real, shared, server-side data.
 - Shared UI primitives live in `src/components/ui` (Button, Modal, form, Badge,
   Widget, …). Reuse them rather than re-styling.
+
+## Institutional model (auth & enrolment)
+
+The app runs as an institution, not a self-service signup:
+
+- **No public self-signup.** `/signup` is an informational notice; accounts are
+  admin-issued. The admin console's "Add person" (`/api/admin/create-user`,
+  service-role) generates a `name@moacademy.com` login + temporary password and
+  sets the role. The address is a **login identity, not a real mailbox**.
+- **First-login password change.** New accounts carry
+  `user_metadata.must_change_password`; `src/lib/supabase/middleware.ts` funnels
+  them to `/account/set-password` until they set their own password.
+- **Enrolment is admin-driven.** A signed-in student's courses come from
+  `subject_enrollments` (migration 0018), assigned via the console's "Subjects"
+  control (`/api/admin/enroll`). Legacy paid `registrations` are only a fallback;
+  the anonymous demo still uses seed courses.
+- **Guardians** (`parent` role, migration 0017) are created student-driven at
+  signup/creation and linked via `guardian_links`; `/family` shows the linked
+  child's enrolled courses.
+- Migrations **0017** (guardians) and **0018** (enrolments) must be applied to
+  the live DB for these to work; code degrades gracefully (caught errors →
+  fallback) until then. Service-role key required for the admin routes.
