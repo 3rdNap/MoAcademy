@@ -189,9 +189,9 @@ export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
             </>
           ) : (
             <>
-              New to MoAcademy?{" "}
+              Accounts are issued by your institution.{" "}
               <Link href="/signup" className="font-medium text-brand-600 hover:underline">
-                Create an account
+                Learn more
               </Link>
             </>
           )}

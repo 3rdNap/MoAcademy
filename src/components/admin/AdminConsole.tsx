@@ -15,6 +15,7 @@ import {
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
+import { AddPersonButton } from "@/components/admin/AddPersonButton";
 import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin, roleLabel } from "@/lib/role";
 import { roster } from "@/lib/roster";
@@ -180,10 +181,13 @@ export function AdminConsole({
 
         {/* People */}
         <section>
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
-            People
-            {overview && <Badge tone="neutral">{overview.people.length}</Badge>}
-          </h2>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
+              People
+              {overview && <Badge tone="neutral">{overview.people.length}</Badge>}
+            </h2>
+            <AddPersonButton enabled={roleMgmt} />
+          </div>
           {overview && overview.people.length > 5 && (
             <div className="relative mb-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
