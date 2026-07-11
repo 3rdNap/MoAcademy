@@ -19,6 +19,7 @@ import {
   setRemoteModulePublished,
 } from "@/lib/course-content-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
+import { fetchMyItemProgress, setItemComplete } from "@/lib/module-progress-db";
 import { itemIcon, itemLabel } from "@/lib/itemMeta";
 import { formatDateTime } from "@/lib/utils";
 import type { Course, CourseModule, ModuleItem, ModuleItemType } from "@/lib/types";
@@ -48,6 +49,13 @@ export function CourseModulesBoard({
     [],
   );
 
+  // Per-item completion for non-remote (seed/local) items — a working toggle
+  // for anonymous/demo users too. Presence in this collection = complete.
+  const progress = useLocalCollection<{ id: string }>(
+    `moacademy.progress.${course.id}`,
+    [],
+  );
+
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [published, setPublished] = useState(true);
@@ -57,10 +65,18 @@ export function CourseModulesBoard({
   // visible to every student on every device.
   const [remote, setRemote] = useState<CourseModule[] | null>(null);
   const [signedIn, setSignedIn] = useState(false);
+  // Completed item ids for the signed-in user (migration 0023) — null when
+  // signed out/offline, in which case remote items fall back to `progress`.
+  const [remoteProgress, setRemoteProgress] = useState<Set<string> | null>(
+    null,
+  );
   useEffect(() => {
     let alive = true;
     fetchRemoteModules(course.id).then((r) => alive && setRemote(r));
     getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
+    fetchMyItemProgress().then(
+      (ids) => alive && setRemoteProgress(ids ? new Set(ids) : null),
+    );
     return () => {
       alive = false;
     };
@@ -173,6 +189,51 @@ export function CourseModulesBoard({
     authored.update(m.id, { items: m.items.filter((it) => it.id !== itemId) });
   }
 
+  // Completion = explicit user action. Remote items check the server-tracked
+  // set (falling back to the local store when offline/signed out); seed/local
+  // items respect the local store or the seed data's static flag — whichever
+  // says done. A toggle never mutates seed data, only the local store.
+  function isItemComplete(item: ModuleItem, source: Source): boolean {
+    if (source === "remote" && remoteProgress !== null) {
+      return remoteProgress.has(item.id);
+    }
+    return (
+      progress.items.some((p) => p.id === item.id) || Boolean(item.completed)
+    );
+  }
+
+  async function toggleItemComplete(item: ModuleItem, source: Source) {
+    const done = isItemComplete(item, source);
+    const next = !done;
+
+    if (source === "remote" && signedIn) {
+      setRemoteProgress((prev) => {
+        const s = new Set(prev ?? []);
+        if (next) s.add(item.id);
+        else s.delete(item.id);
+        return s;
+      });
+      const ok = await setItemComplete(item.id, next);
+      if (!ok) {
+        setRemoteProgress((prev) => {
+          const s = new Set(prev ?? []);
+          if (next) s.delete(item.id);
+          else s.add(item.id);
+          return s;
+        });
+      }
+      return;
+    }
+
+    if (next) {
+      if (!progress.items.some((p) => p.id === item.id)) {
+        progress.add({ id: item.id });
+      }
+    } else {
+      progress.remove(item.id);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -203,6 +264,9 @@ export function CourseModulesBoard({
               teaching && (source === "local" || (source === "remote" && signedIn))
             }
             shared={source === "remote"}
+            teaching={teaching}
+            isItemComplete={(item) => isItemComplete(item, source)}
+            onToggleItem={(item) => toggleItemComplete(item, source)}
             onTogglePublished={() => togglePublished(m, source)}
             onDeleteModule={() => deleteModule(m, source)}
             onAddItem={(item) => addItem(m, source, item)}
@@ -254,6 +318,9 @@ function ModuleSection({
   color,
   editable,
   shared,
+  teaching,
+  isItemComplete,
+  onToggleItem,
   onTogglePublished,
   onDeleteModule,
   onAddItem,
@@ -264,6 +331,10 @@ function ModuleSection({
   editable: boolean;
   /** True when this module lives in the shared database. */
   shared?: boolean;
+  /** Teaching accounts see static status icons, not the toggle. */
+  teaching: boolean;
+  isItemComplete: (item: ModuleItem) => boolean;
+  onToggleItem: (item: ModuleItem) => void;
   onTogglePublished: () => void;
   onDeleteModule: () => void;
   onAddItem: (item: ModuleItem) => void;
@@ -279,6 +350,8 @@ function ModuleSection({
     setItemTitle("");
   }
 
+  const doneCount = module.items.filter(isItemComplete).length;
+
   return (
     <section className="card overflow-hidden">
       <header className="flex items-center justify-between gap-2 bg-surface-subtle px-4 py-3">
@@ -287,6 +360,11 @@ function ModuleSection({
           {module.title}
         </h2>
         <div className="flex items-center gap-2">
+          {!teaching && module.items.length > 0 && (
+            <span className="text-xs text-ink-faint">
+              {doneCount}/{module.items.length} done
+            </span>
+          )}
           {shared && <Badge tone="info">All students</Badge>}
           {module.published ? (
             <Badge tone="success">Published</Badge>
@@ -316,24 +394,39 @@ function ModuleSection({
       <ul className="divide-y divide-black/5">
         {module.items.map((it) => {
           const Icon = itemIcon[it.type];
+          const done = isItemComplete(it);
           return (
             <li
               key={it.id}
               className="flex items-center gap-3 px-4 py-3 hover:bg-surface-subtle"
             >
               <span className="shrink-0">
-                {it.completed ? (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                {teaching ? (
+                  done ? (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  ) : (
+                    <Icon className="h-5 w-5 text-ink-faint" />
+                  )
                 ) : (
-                  <Icon className="h-5 w-5 text-ink-faint" />
+                  <button
+                    type="button"
+                    onClick={() => onToggleItem(it)}
+                    aria-label={`Mark "${it.title}" ${done ? "incomplete" : "done"}`}
+                    aria-pressed={done}
+                    className="focus-ring rounded-full"
+                  >
+                    {done ? (
+                      <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                    ) : (
+                      <Icon className="h-5 w-5 text-ink-faint hover:text-ink-muted" />
+                    )}
+                  </button>
                 )}
               </span>
               <div className="min-w-0 flex-1">
                 <p
                   className={
-                    it.completed
-                      ? "text-sm text-ink-muted"
-                      : "text-sm font-medium text-ink"
+                    done ? "text-sm text-ink-muted" : "text-sm font-medium text-ink"
                   }
                 >
                   {it.title}
@@ -344,7 +437,7 @@ function ModuleSection({
                   {it.dueAt ? ` · Due ${formatDateTime(it.dueAt)}` : ""}
                 </p>
               </div>
-              {it.dueAt && !it.completed && (
+              {it.dueAt && !done && (
                 <span className="hidden items-center gap-1 text-xs text-ink-faint sm:flex">
                   <Clock className="h-3.5 w-3.5" />
                   {formatDateTime(it.dueAt)}
