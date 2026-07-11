@@ -2,8 +2,9 @@
 
 ## Branch workflow (important)
 
-- **Develop on `claude/academy-lms-redesign-txxeo9`.** All work and pushes go to
-  this feature branch. Never commit directly on `main`.
+- **Develop on the session's designated `claude/*` feature branch** (currently
+  `claude/superbases-connected-migrations-n8mdm2`). Never commit directly on
+  `main`.
 - **Stay on the feature branch even after a merge.** Do not `git checkout main`
   to sync. Instead update the local `main` ref without leaving the branch:
 
@@ -14,7 +15,7 @@
 
   If local `main` ever has stray commits, reset it to the remote without
   checking it out: `git branch -f main origin/main`.
-- Push with `git push -u origin claude/academy-lms-redesign-txxeo9`.
+- Push with `git push -u origin <feature-branch>`.
 - Open a PR (base `main`) only when asked; merge only when asked.
 
 ## Verifying changes
@@ -28,22 +29,46 @@ smoke test usually isn't possible. Verify instead by:
 3. Unit-check pure logic (pricing, gradebook math, date helpers) with a small
    `node` script.
 
-Client islands gated on `localStorage`/role (roadmap, billing, instructor
-tools, gradebook) only render their content after hydration, so they won't
-appear in the static prerender — that's expected, not a bug.
+Client islands gated on `localStorage`/role only render their content after
+hydration, so they won't appear in the static prerender — that's expected,
+not a bug.
 
 ## Architecture conventions
 
-- **Runs with no backend.** Server data comes from `src/lib/data` (Supabase →
-  seed fallback). User-owned, editable data persists in the browser via
-  `useLocalCollection` (`src/lib/local-store.ts`): roadmap, billing, instructor
-  authoring, gradebook. Keys are namespaced `moacademy.*`.
-- **Roles** are previewed client-side via `src/components/role` (`RoleProvider`,
-  `InstructorOnly`). This maps onto `profiles.role` once Supabase Auth is wired.
-- **Supabase migrations** in `supabase/migrations/` mirror the domain model and
-  are the path to real, shared, server-side data.
-- Shared UI primitives live in `src/components/ui` (Button, Modal, form, Badge,
-  Widget, …). Reuse them rather than re-styling.
+- **Supabase-first with graceful degradation.** Server data comes from
+  `src/lib/data` (Supabase → seed fallback); every query is wrapped so an
+  error/missing backend degrades to the bundled demo instead of breaking the
+  page. Signed-in users see only their real data; anonymous visitors get the
+  seeded demo.
+- **Real, shared server data** (Supabase, applied through migration 0022):
+  courses/enrolments (`subject_enrollments`), instructor-authored
+  announcements/assignments/modules (keyed by `course_key` = the subject id,
+  e.g. `sub_math`), discussions, study guides, **submissions + gradebook**
+  (0019/0020: students turn in work, teaching accounts grade their real
+  roster, field-level trigger separates student vs. teacher columns),
+  **messages** (0021: course-mates and admins; recipient-only, column-limited
+  `read_at` updates), guardians (0017).
+- **Browser-side data modules** live in `src/lib/*-db.ts`
+  (`course-content-db`, `discussions-db`, `gradebook-db`, `inbox-db`,
+  `study-guides-db`): browser Supabase client, every function returns
+  null/false on any error so components fall back to the local demo store.
+- **Still browser-local only** via `useLocalCollection`
+  (`src/lib/local-store.ts`, keys `moacademy.*`): roadmap (college
+  applications), billing/registrations, personal calendar events, practice
+  quiz history, and all demo fallbacks. These are the remaining candidates
+  for server sync.
+- **RLS helper convention:** security-definer helpers live in the
+  non-API-exposed `private` schema (`is_admin`, `is_guardian_of`,
+  `teaches_assignment`, `teaches_student`, `shares_subject_with`,
+  `can_message`, plus the `subject_code_map` lookup bridging subject *id*
+  (`sub_math`, used as `course_key`) ↔ subject *code* (`MATH`, used in
+  `subject_enrollments.subject_code`)). Note that id≠code — map via
+  `subjects` in `src/lib/billing/subjects.ts` client-side.
+- **Roles** are previewed client-side via `src/components/role`
+  (`RoleProvider`, `InstructorOnly`) and are authoritative from
+  `profiles.role` for signed-in users.
+- Shared UI primitives live in `src/components/ui` (Button, Modal, form,
+  Badge, Widget, …). Reuse them rather than re-styling.
 
 ## Institutional model (auth & enrolment)
 
@@ -58,11 +83,17 @@ The app runs as an institution, not a self-service signup:
   them to `/account/set-password` until they set their own password.
 - **Enrolment is admin-driven.** A signed-in student's courses come from
   `subject_enrollments` (migration 0018), assigned via the console's "Subjects"
-  control (`/api/admin/enroll`). Legacy paid `registrations` are only a fallback;
-  the anonymous demo still uses seed courses.
+  control (`/api/admin/enroll`). Legacy paid `registrations` are only a
+  fallback; the anonymous demo still uses seed courses. Instructor-role
+  enrolment rows double as teaching assignments (they drive gradebook access,
+  rosters, and instructor names on courses).
+- **Visibility:** course-mates (anyone sharing a subject+term enrolment) can
+  see each other's profiles/enrolments and message each other; teaching
+  accounts see and grade their enrolled roster; guardians get read-only access
+  to their linked child's courses, submissions and grades; admins see all.
 - **Guardians** (`parent` role, migration 0017) are created student-driven at
   signup/creation and linked via `guardian_links`; `/family` shows the linked
-  child's enrolled courses.
-- Migrations **0017** (guardians) and **0018** (enrolments) must be applied to
-  the live DB for these to work; code degrades gracefully (caught errors →
-  fallback) until then. Service-role key required for the admin routes.
+  child's enrolled courses and grade rollups.
+- All migrations through **0022** are applied to the live Supabase project
+  (`lzrwzjawwsjhmesavgzr`). Code still degrades gracefully (caught errors →
+  fallback). Service-role key required for the admin routes.
