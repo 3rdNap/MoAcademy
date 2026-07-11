@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { AddPersonButton } from "@/components/admin/AddPersonButton";
 import { ManageSubjectsButton } from "@/components/admin/ManageSubjectsButton";
+import { ResetPasswordButton } from "@/components/admin/ResetPasswordButton";
 import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin, roleLabel } from "@/lib/role";
 import { roster } from "@/lib/roster";
@@ -422,16 +423,21 @@ function RealPerson({
         </p>
         <p className="truncate text-xs text-ink-faint">{person.email}</p>
         {error && <p className="text-xs text-rose-600">{error}</p>}
-        {canEnroll && (
-          <div className="mt-1">
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {canEnroll && (
             <ManageSubjectsButton
               userId={person.id}
               name={person.name || person.email}
               role={person.role as "student" | "instructor"}
               enabled={manageEnrollment}
             />
-          </div>
-        )}
+          )}
+          <ResetPasswordButton
+            userId={person.id}
+            name={person.name || person.email}
+            enabled={manageEnrollment}
+          />
+        </div>
       </div>
       {editable ? (
         <select

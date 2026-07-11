@@ -829,9 +829,52 @@ export const getAnnouncements = cache(async (
   return seedRows;
 });
 
+/** The signed-in user's real activity feed: recent announcements on their
+ *  courses plus their own recently graded work, newest first. Falls back to
+ *  the bundled demo for anonymous visitors, and to [] on any error. */
 export async function getActivity(): Promise<ActivityEvent[]> {
   const { authed } = await getAuthState();
-  return authed ? [] : seed.activity;
+  if (!authed) return seed.activity;
+  try {
+    const courses = await getCourses();
+    const courseIds = courses.map((c) => c.id);
+    const [announcements, grades] = await Promise.all([
+      getAnnouncementsForCourses(courseIds),
+      getRecentGrades(),
+    ]);
+
+    const since = Date.now() - 14 * 86400000;
+    const events: ActivityEvent[] = [];
+
+    for (const a of announcements) {
+      if (new Date(a.postedAt).getTime() < since) continue;
+      events.push({
+        id: `ann_${a.id}`,
+        kind: "announcement",
+        courseId: a.courseId,
+        title: a.title,
+        detail: `${a.author} posted an announcement.`,
+        at: a.postedAt,
+      });
+    }
+
+    for (const g of grades) {
+      events.push({
+        id: `grade_${g.id}`,
+        kind: "grade",
+        courseId: g.courseId,
+        title: `${g.title} graded`,
+        detail: `You scored ${g.score}/${g.points}.`,
+        at: g.gradedAt,
+      });
+    }
+
+    return events
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 12);
+  } catch {
+    return [];
+  }
 }
 
 export async function getCalendar(): Promise<CalendarEvent[]> {
