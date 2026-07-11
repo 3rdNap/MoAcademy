@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { MessageSquareText, Paperclip } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { Field, Input, Textarea } from "@/components/ui/form";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection } from "@/lib/local-store";
@@ -16,7 +20,7 @@ import {
   type RemoteSubmission,
   type RosterStudent,
 } from "@/lib/gradebook-db";
-import { formatDate, initialsOf, letterGrade } from "@/lib/utils";
+import { formatDate, initialsOf, letterGrade, relativeTime } from "@/lib/utils";
 import type { Assignment, Course } from "@/lib/types";
 
 interface GradeCell {
@@ -123,13 +127,24 @@ function StudentGrades({
           <tbody className="divide-y divide-black/5">
             {assignments.map((a) => {
               const e = effective(a);
+              const feedback = mySubs[a.id]?.feedback;
               return (
                 <tr key={a.id} className="hover:bg-surface-subtle">
-                  <td className="px-4 py-3 font-medium text-ink">{a.title}</td>
-                  <td className="px-4 py-3 text-ink-muted">
+                  <td className="px-4 py-3 align-top font-medium text-ink">
+                    {a.title}
+                    {feedback && (
+                      <p className="mt-1 whitespace-pre-wrap text-xs font-normal text-ink-muted">
+                        <span className="font-semibold text-ink-faint">
+                          Instructor feedback:
+                        </span>{" "}
+                        {feedback}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 align-top text-ink-muted">
                     {formatDate(a.dueAt)}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 align-top">
                     {e.status === "graded" ? (
                       <Badge tone="success">Graded</Badge>
                     ) : e.status === "missing" ? (
@@ -138,7 +153,7 @@ function StudentGrades({
                       <Badge tone="neutral">Pending</Badge>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right font-medium text-ink">
+                  <td className="px-4 py-3 text-right align-top font-medium text-ink">
                     {e.score != null ? `${e.score}/${a.points}` : `—/${a.points}`}
                   </td>
                 </tr>
@@ -184,7 +199,7 @@ function InstructorGradebook({
 
   const cellId = (sid: string, aid: string) => `${sid}__${aid}`;
 
-  const [realScores, setRealScores] = useState<Record<string, number | null>>(
+  const [realSubs, setRealSubs] = useState<Record<string, RemoteSubmission>>(
     {},
   );
   useEffect(() => {
@@ -192,9 +207,9 @@ function InstructorGradebook({
     let alive = true;
     fetchCourseSubmissions(assignments.map((a) => a.id)).then((subs) => {
       if (!alive || !subs) return;
-      setRealScores(
+      setRealSubs(
         Object.fromEntries(
-          subs.map((s) => [cellId(s.userId, s.assignmentId), s.score]),
+          subs.map((s) => [cellId(s.userId, s.assignmentId), s]),
         ),
       );
     });
@@ -203,17 +218,40 @@ function InstructorGradebook({
     };
   }, [realMode, assignments]);
 
+  function placeholderSub(
+    sid: string,
+    aid: string,
+    score: number | null,
+    feedback: string | undefined,
+  ): RemoteSubmission {
+    return {
+      assignmentId: aid,
+      userId: sid,
+      status: score != null ? "graded" : "missing",
+      score,
+      body: "",
+      feedback,
+    };
+  }
+
   const getScore = (sid: string, aid: string): number | undefined =>
     realMode
-      ? realScores[cellId(sid, aid)] ?? undefined
+      ? realSubs[cellId(sid, aid)]?.score ?? undefined
       : grades.items.find((g) => g.id === cellId(sid, aid))?.score;
 
   async function setScore(sid: string, aid: string, raw: string, points: number) {
     if (realMode) {
       const score = raw === "" ? null : Math.max(0, Math.min(points, Number(raw)));
       if (score !== null && Number.isNaN(score)) return;
-      setRealScores((prev) => ({ ...prev, [cellId(sid, aid)]: score }));
-      await upsertGrade(aid, sid, { score });
+      const id = cellId(sid, aid);
+      const existing = realSubs[id];
+      setRealSubs((prev) => ({
+        ...prev,
+        [id]: existing
+          ? { ...existing, score, status: score != null ? "graded" : existing.status }
+          : placeholderSub(sid, aid, score, undefined),
+      }));
+      await upsertGrade(aid, sid, { score, feedback: existing?.feedback });
       return;
     }
     const id = cellId(sid, aid);
@@ -226,6 +264,49 @@ function InstructorGradebook({
     if (Number.isNaN(score)) return;
     if (existing) grades.update(id, { score });
     else grades.add({ id, score });
+  }
+
+  const [reviewCell, setReviewCell] = useState<{ sid: string; aid: string } | null>(
+    null,
+  );
+  const [reviewScore, setReviewScore] = useState("");
+  const [reviewFeedback, setReviewFeedback] = useState("");
+
+  function openReview(sid: string, aid: string) {
+    const sub = realSubs[cellId(sid, aid)];
+    setReviewCell({ sid, aid });
+    setReviewScore(sub?.score != null ? String(sub.score) : "");
+    setReviewFeedback(sub?.feedback ?? "");
+  }
+
+  const reviewAssignment = reviewCell
+    ? assignments.find((a) => a.id === reviewCell.aid)
+    : undefined;
+  const reviewStudent = reviewCell
+    ? activeRoster.find((s) => s.id === reviewCell.sid)
+    : undefined;
+  const reviewSub = reviewCell ? realSubs[cellId(reviewCell.sid, reviewCell.aid)] : undefined;
+
+  async function saveReview() {
+    if (!reviewCell) return;
+    const { sid, aid } = reviewCell;
+    const points = reviewAssignment?.points ?? Infinity;
+    const score =
+      reviewScore === "" ? null : Math.max(0, Math.min(points, Number(reviewScore)));
+    if (score !== null && Number.isNaN(score)) return;
+    const feedback = reviewFeedback.trim();
+    const id = cellId(sid, aid);
+    setRealSubs((prev) => {
+      const existing = prev[id];
+      return {
+        ...prev,
+        [id]: existing
+          ? { ...existing, score, feedback: feedback || undefined }
+          : placeholderSub(sid, aid, score, feedback || undefined),
+      };
+    });
+    await upsertGrade(aid, sid, { score, feedback });
+    setReviewCell(null);
   }
 
   function studentPct(sid: string) {
@@ -296,18 +377,30 @@ function InstructorGradebook({
                   </td>
                   {assignments.map((a) => (
                     <td key={a.id} className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        max={a.points}
-                        value={getScore(s.id, a.id) ?? ""}
-                        onChange={(e) =>
-                          setScore(s.id, a.id, e.target.value, a.points)
-                        }
-                        placeholder="—"
-                        className="focus-ring h-9 w-16 rounded-lg border border-black/10 bg-surface px-2 text-center text-sm text-ink placeholder:text-ink-faint"
-                        aria-label={`${s.name} — ${a.title}`}
-                      />
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0}
+                          max={a.points}
+                          value={getScore(s.id, a.id) ?? ""}
+                          onChange={(e) =>
+                            setScore(s.id, a.id, e.target.value, a.points)
+                          }
+                          placeholder="—"
+                          className="focus-ring h-9 w-16 rounded-lg border border-black/10 bg-surface px-2 text-center text-sm text-ink placeholder:text-ink-faint"
+                          aria-label={`${s.name} — ${a.title}`}
+                        />
+                        {realMode && (
+                          <button
+                            type="button"
+                            onClick={() => openReview(s.id, a.id)}
+                            className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-surface-sunken hover:text-ink"
+                            aria-label={`Review ${s.name} — ${a.title}`}
+                          >
+                            <MessageSquareText className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   ))}
                   <td className="px-4 py-2 text-right">
@@ -352,6 +445,69 @@ function InstructorGradebook({
         Switch to the Student view (top bar) to see the learner&apos;s own grade
         page.
       </p>
+
+      <Modal
+        open={reviewCell !== null}
+        onClose={() => setReviewCell(null)}
+        title={`${reviewStudent?.name ?? "Student"} · ${reviewAssignment?.title ?? ""}`}
+        description={
+          reviewSub?.submittedAt
+            ? `Submitted ${relativeTime(reviewSub.submittedAt)}`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setReviewCell(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveReview}>Save</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {reviewSub?.body ? (
+            <div className="rounded-lg border border-black/10 bg-surface-subtle p-3 text-sm text-ink">
+              <p className="whitespace-pre-wrap">{reviewSub.body}</p>
+              {reviewSub.fileName && (
+                <p className="mt-2 flex items-center gap-1 text-xs text-ink-faint">
+                  <Paperclip className="h-3 w-3" />
+                  {reviewSub.fileName}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-black/15 p-3 text-sm text-ink-faint">
+              (No submission yet)
+            </p>
+          )}
+          <Field label={`Score (out of ${reviewAssignment?.points ?? 0})`}>
+            <Input
+              type="number"
+              min={0}
+              max={reviewAssignment?.points}
+              value={reviewScore}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") {
+                  setReviewScore("");
+                  return;
+                }
+                const points = reviewAssignment?.points ?? Infinity;
+                const capped = Math.max(0, Math.min(points, Number(raw)));
+                setReviewScore(Number.isNaN(capped) ? raw : String(capped));
+              }}
+              placeholder="—"
+            />
+          </Field>
+          <Field label="Feedback">
+            <Textarea
+              value={reviewFeedback}
+              onChange={(e) => setReviewFeedback(e.target.value)}
+              placeholder="Leave feedback for the student…"
+            />
+          </Field>
+        </div>
+      </Modal>
     </>
   );
 }
