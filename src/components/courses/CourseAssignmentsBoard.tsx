@@ -20,6 +20,8 @@ import {
 import { getSignedInUserId } from "@/lib/study-guides-db";
 import {
   fetchMySubmissions,
+  getSubmissionFileUrl,
+  uploadSubmissionFile,
   upsertMySubmission,
   type RemoteSubmission,
 } from "@/lib/gradebook-db";
@@ -31,6 +33,7 @@ interface Submission {
   id: string; // assignment id
   body: string;
   fileName?: string;
+  filePath?: string;
   submittedAt: string;
 }
 
@@ -89,6 +92,9 @@ export function CourseAssignmentsBoard({
   const [submitFor, setSubmitFor] = useState<Assignment | null>(null);
   const [subBody, setSubBody] = useState("");
   const [subFile, setSubFile] = useState<string | undefined>();
+  // The picked File itself (only when the student attaches a new file this
+  // session); subFile keeps the display name, incl. a previously stored one.
+  const [subFileObj, setSubFileObj] = useState<File | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiNote, setAiNote] = useState<string | null>(null);
   const [pubNote, setPubNote] = useState<string | null>(null);
@@ -159,6 +165,7 @@ export function CourseAssignmentsBoard({
         id: aid,
         body: remoteSub.body,
         fileName: remoteSub.fileName,
+        filePath: remoteSub.filePath,
         submittedAt: remoteSub.submittedAt ?? "",
       };
     }
@@ -177,21 +184,49 @@ export function CourseAssignmentsBoard({
     setSubmitFor(a);
     setSubBody(existing?.body ?? "");
     setSubFile(existing?.fileName);
+    setSubFileObj(null);
+  }
+
+  /** Fetch a short-lived signed URL for a stored attachment and open it. */
+  async function openAttachment(path: string) {
+    const url = await getSubmissionFileUrl(path);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function resetSubmit() {
+    setSubmitFor(null);
+    setSubBody("");
+    setSubFile(undefined);
+    setSubFileObj(null);
   }
 
   async function submitWork() {
     if (!submitFor) return;
     const isRemoteAssignment = remote?.some((a) => a.id === submitFor.id);
     if (isRemoteAssignment && signedIn) {
+      // Upload the attachment (if any) first; a failed upload still submits the
+      // text body, name-only, with a note — as before real attachments existed.
+      let fileName = subFile;
+      let filePath: string | undefined;
+      if (subFileObj) {
+        const uploaded = await uploadSubmissionFile(submitFor.id, subFileObj);
+        if (uploaded) {
+          fileName = uploaded.name;
+          filePath = uploaded.path;
+        } else {
+          setPubNote(
+            "Attachment couldn't be uploaded — submitted without it.",
+          );
+        }
+      }
       const result = await upsertMySubmission(submitFor.id, {
         body: subBody.trim(),
-        fileName: subFile,
+        fileName,
+        filePath,
       });
       if (result) {
         setMySubs((prev) => ({ ...prev, [submitFor.id]: result }));
-        setSubmitFor(null);
-        setSubBody("");
-        setSubFile(undefined);
+        resetSubmit();
         return;
       }
       setPubNote(
@@ -207,9 +242,7 @@ export function CourseAssignmentsBoard({
     };
     if (existing) submissions.update(submitFor.id, record);
     else submissions.add(record);
-    setSubmitFor(null);
-    setSubBody("");
-    setSubFile(undefined);
+    resetSubmit();
   }
 
   type Source = "local" | "remote" | "seed";
@@ -360,7 +393,24 @@ export function CourseAssignmentsBoard({
                     <span className="text-emerald-600">
                       {" "}
                       · Submitted {relativeTime(sub.submittedAt)}
-                      {sub.fileName ? ` · ${sub.fileName}` : ""}
+                      {sub.fileName ? (
+                        sub.filePath ? (
+                          <>
+                            {" · "}
+                            <button
+                              type="button"
+                              onClick={() => openAttachment(sub.filePath!)}
+                              className="focus-ring inline underline underline-offset-2 hover:text-emerald-700"
+                            >
+                              {sub.fileName}
+                            </button>
+                          </>
+                        ) : (
+                          ` · ${sub.fileName}`
+                        )
+                      ) : (
+                        ""
+                      )}
                     </span>
                   )}
                 </p>
@@ -504,7 +554,7 @@ export function CourseAssignmentsBoard({
 
       <Modal
         open={submitFor !== null}
-        onClose={() => setSubmitFor(null)}
+        onClose={resetSubmit}
         title={`Submit · ${submitFor?.title ?? ""}`}
         description={
           submitFor
@@ -513,7 +563,7 @@ export function CourseAssignmentsBoard({
         }
         footer={
           <>
-            <Button variant="ghost" onClick={() => setSubmitFor(null)}>
+            <Button variant="ghost" onClick={resetSubmit}>
               Cancel
             </Button>
             <Button
@@ -541,7 +591,11 @@ export function CourseAssignmentsBoard({
               <input
                 type="file"
                 className="hidden"
-                onChange={(e) => setSubFile(e.target.files?.[0]?.name)}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setSubFileObj(file);
+                  setSubFile(file?.name);
+                }}
               />
             </label>
             {subFile && (

@@ -16,6 +16,7 @@ export interface RemoteSubmission {
   score: number | null;
   body: string;
   fileName?: string;
+  filePath?: string;
   feedback?: string;
   submittedAt?: string;
   gradedAt?: string;
@@ -28,6 +29,7 @@ interface SubmissionRow {
   score: number | null;
   body: string;
   file_name: string | null;
+  file_path: string | null;
   feedback: string | null;
   submitted_at: string | null;
   graded_at: string | null;
@@ -41,10 +43,60 @@ function mapSubmission(r: SubmissionRow): RemoteSubmission {
     score: r.score,
     body: r.body,
     fileName: r.file_name ?? undefined,
+    filePath: r.file_path ?? undefined,
     feedback: r.feedback ?? undefined,
     submittedAt: r.submitted_at ?? undefined,
     gradedAt: r.graded_at ?? undefined,
   };
+}
+
+const SUBMISSIONS_BUCKET = "submissions";
+
+/**
+ * Upload a submission attachment to the private 'submissions' bucket. The path
+ * `<uid>/<assignmentId>/…` matches the storage RLS (owner via segment 1,
+ * teaching account via private.teaches_assignment on segment 2). Returns the
+ * stored path + display name, or null on any failure so callers fall back to a
+ * name-only submission.
+ */
+export async function uploadSubmissionFile(
+  assignmentId: string,
+  file: File,
+): Promise<{ path: string; name: string } | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    // Object keys reject some characters students commonly use in filenames;
+    // the display name (file_name column) keeps the original.
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${user.id}/${assignmentId}/${crypto.randomUUID()}-${safeName}`;
+    const { error } = await supabase.storage
+      .from(SUBMISSIONS_BUCKET)
+      .upload(path, file, { upsert: false, contentType: file.type });
+    if (error) return null;
+    return { path, name: file.name };
+  } catch {
+    return null;
+  }
+}
+
+/** Short-lived signed URL for a submission attachment. Null on any failure. */
+export async function getSubmissionFileUrl(path: string): Promise<string | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.storage
+      .from(SUBMISSIONS_BUCKET)
+      .createSignedUrl(path, 300);
+    if (error || !data) return null;
+    return data.signedUrl ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** The signed-in student's own submissions for these assignments — or null. */
@@ -74,7 +126,7 @@ export async function fetchMySubmissions(
 /** Turn in work as the signed-in student. Null when signed out / refused. */
 export async function upsertMySubmission(
   assignmentId: string,
-  input: { body: string; fileName?: string },
+  input: { body: string; fileName?: string; filePath?: string },
 ): Promise<RemoteSubmission | null> {
   const supabase = createSupabaseBrowserClient();
   if (!supabase) return null;
@@ -92,6 +144,8 @@ export async function upsertMySubmission(
           status: "submitted",
           body: input.body,
           file_name: input.fileName ?? null,
+          // Only overwrite the stored path when a new upload happened.
+          ...(input.filePath ? { file_path: input.filePath } : {}),
           submitted_at: new Date().toISOString(),
         },
         { onConflict: "assignment_id,user_id" },

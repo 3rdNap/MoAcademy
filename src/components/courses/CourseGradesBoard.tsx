@@ -16,6 +16,7 @@ import {
   fetchCourseRoster,
   fetchCourseSubmissions,
   fetchMySubmissions,
+  getSubmissionFileUrl,
   upsertGrade,
   type RemoteSubmission,
   type RosterStudent,
@@ -272,6 +273,12 @@ function InstructorGradebook({
   const [reviewScore, setReviewScore] = useState("");
   const [reviewFeedback, setReviewFeedback] = useState("");
 
+  /** Fetch a short-lived signed URL for a submission attachment and open it. */
+  async function openAttachment(path: string) {
+    const url = await getSubmissionFileUrl(path);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   function openReview(sid: string, aid: string) {
     const sub = realSubs[cellId(sid, aid)];
     setReviewCell({ sid, aid });
@@ -471,7 +478,17 @@ function InstructorGradebook({
               {reviewSub.fileName && (
                 <p className="mt-2 flex items-center gap-1 text-xs text-ink-faint">
                   <Paperclip className="h-3 w-3" />
-                  {reviewSub.fileName}
+                  {reviewSub.filePath ? (
+                    <button
+                      type="button"
+                      onClick={() => openAttachment(reviewSub.filePath!)}
+                      className="focus-ring underline underline-offset-2 hover:text-ink"
+                    >
+                      {reviewSub.fileName}
+                    </button>
+                  ) : (
+                    reviewSub.fileName
+                  )}
                 </p>
               )}
             </div>
