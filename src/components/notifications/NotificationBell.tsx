@@ -14,6 +14,10 @@ import {
 import { useLocalCollection } from "@/lib/local-store";
 import { fetchRecentRemoteAnnouncements } from "@/lib/course-content-db";
 import { fetchMyMessages, type RemoteMessage } from "@/lib/inbox-db";
+import {
+  fetchRemoteApplications,
+  fetchRemoteScholarships,
+} from "@/lib/roadmap-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
 import type { Announcement, Assignment } from "@/lib/types";
 import type { RecentGrade } from "@/lib/data";
@@ -57,6 +61,20 @@ export function NotificationBell({
     "moacademy.roadmap.scholarships",
     seedScholarships,
   );
+
+  // Signed-in students' roadmap deadlines come from Supabase; anonymous local.
+  const [remoteApps, setRemoteApps] = useState<ApplicationEntry[] | null>(null);
+  const [remoteScholarships, setRemoteScholarships] = useState<
+    Scholarship[] | null
+  >(null);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteApplications().then((r) => alive && setRemoteApps(r));
+    fetchRemoteScholarships().then((r) => alive && setRemoteScholarships(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => setMounted(true), []);
 
@@ -129,8 +147,10 @@ export function NotificationBell({
     }
 
     // Roadmap deadlines closing within 14 days
+    const appItems = remoteApps ?? apps.items;
+    const scholarshipItems = remoteScholarships ?? scholarships.items;
     const deadlines = [
-      ...apps.items
+      ...appItems
         .filter((a) => a.closesAt)
         .map((a) => ({
           id: `app-${a.id}`,
@@ -138,7 +158,7 @@ export function NotificationBell({
           href: "/roadmap/applications",
           closesAt: a.closesAt!,
         })),
-      ...scholarships.items
+      ...scholarshipItems
         .filter((s) => s.closesAt)
         .map((s) => ({
           id: `sch-${s.id}`,
@@ -226,7 +246,7 @@ export function NotificationBell({
     }
 
     return list.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-  }, [read.items, apps.items, scholarships.items, published, unreadMessages, authed, upcoming, recentGrades]);
+  }, [read.items, apps.items, scholarships.items, remoteApps, remoteScholarships, published, unreadMessages, authed, upcoming, recentGrades]);
 
   const count = mounted ? notes.length : 0;
 

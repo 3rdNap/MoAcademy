@@ -40,7 +40,7 @@ not a bug.
   error/missing backend degrades to the bundled demo instead of breaking the
   page. Signed-in users see only their real data; anonymous visitors get the
   seeded demo.
-- **Real, shared server data** (Supabase, applied through migration 0022):
+- **Real, shared server data** (Supabase, applied through migration 0025):
   courses/enrolments (`subject_enrollments`), instructor-authored
   announcements/assignments/modules (keyed by `course_key` = the subject id,
   e.g. `sub_math`), discussions, study guides, **submissions + gradebook**
@@ -52,11 +52,16 @@ not a bug.
   (`course-content-db`, `discussions-db`, `gradebook-db`, `inbox-db`,
   `study-guides-db`): browser Supabase client, every function returns
   null/false on any error so components fall back to the local demo store.
+- **User-owned personal data syncs server-side too** (migration 0025):
+  roadmap targets/applications/scholarships, personal calendar events,
+  practice-quiz history. Boards run a dual path — remote state when signed
+  in, browser-local for the anonymous demo — with a one-time ref-guarded
+  import of pre-existing local data into an empty account that must
+  exclude the bundled seed rows (`useLocalCollection` persists its seed
+  defaults even for untouched visitors, so filter by seed ids).
 - **Still browser-local only** via `useLocalCollection`
-  (`src/lib/local-store.ts`, keys `moacademy.*`): roadmap (college
-  applications), billing/registrations, personal calendar events, practice
-  quiz history, and all demo fallbacks. These are the remaining candidates
-  for server sync.
+  (`src/lib/local-store.ts`, keys `moacademy.*`): billing/registrations
+  (legacy — superseded by admin-driven enrolment) and all demo fallbacks.
 - **RLS helper convention:** security-definer helpers live in the
   non-API-exposed `private` schema (`is_admin`, `is_guardian_of`,
   `teaches_assignment`, `teaches_student`, `shares_subject_with`,
@@ -94,6 +99,6 @@ The app runs as an institution, not a self-service signup:
 - **Guardians** (`parent` role, migration 0017) are created student-driven at
   signup/creation and linked via `guardian_links`; `/family` shows the linked
   child's enrolled courses and grade rollups.
-- All migrations through **0022** are applied to the live Supabase project
+- All migrations through **0025** are applied to the live Supabase project
   (`lzrwzjawwsjhmesavgzr`). Code still degrades gracefully (caught errors →
   fallback). Service-role key required for the admin routes.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   Circle,
@@ -16,6 +16,12 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { useLocalCollection, newId } from "@/lib/roadmap/store";
+import {
+  addRemoteTarget,
+  fetchRemoteTargets,
+  removeRemoteTarget,
+  updateRemoteTarget,
+} from "@/lib/roadmap-db";
 import { seedTargets } from "@/lib/roadmap/seed";
 import type {
   Priority,
@@ -50,6 +56,43 @@ export function GoalsBoard() {
     "moacademy.roadmap.targets",
     seedTargets,
   );
+
+  // Signed-in students sync targets to Supabase; anonymous visitors stay local.
+  const [remote, setRemote] = useState<TargetInstitution[] | null>(null);
+  const [pubNote, setPubNote] = useState<string | null>(null);
+  const importedRef = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteTargets().then((r) => alive && setRemote(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // One-time import: a fresh remote account inherits what's on this device.
+  useEffect(() => {
+    if (importedRef.current) return;
+    if (remote === null || remote.length > 0 || !hydrated) return;
+    // Never import the bundled demo seed, which useLocalCollection
+    // persists even for untouched visitors.
+    const seedIds = new Set(seedTargets.map((s) => s.id));
+    const own = items.filter((i) => !seedIds.has(i.id));
+    if (own.length === 0) return;
+    importedRef.current = true;
+    (async () => {
+      const created: TargetInstitution[] = [];
+      for (const t of own) {
+        const { id, ...input } = t;
+        void id;
+        const row = await addRemoteTarget(input);
+        if (row) created.push(row);
+      }
+      setRemote(created);
+    })();
+  }, [remote, hydrated, items]);
+
+  const targets = remote ?? items;
+
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
 
@@ -65,12 +108,72 @@ export function GoalsBoard() {
     setOpen(true);
   }
 
+  async function handleAdd(input: Omit<TargetInstitution, "id">) {
+    if (remote !== null) {
+      const temp: TargetInstitution = { ...input, id: newId() };
+      setRemote((prev) => [temp, ...(prev ?? [])]);
+      const created = await addRemoteTarget(input);
+      if (created) {
+        setRemote((prev) =>
+          (prev ?? []).map((t) => (t.id === temp.id ? created : t)),
+        );
+      } else {
+        setRemote((prev) => (prev ?? []).filter((t) => t.id !== temp.id));
+        setPubNote("Couldn't save to your account — please try again.");
+      }
+      return;
+    }
+    add({ ...input, id: newId() });
+  }
+
+  async function handleUpdate(id: string, input: Omit<TargetInstitution, "id">) {
+    if (remote !== null) {
+      const snapshot = remote;
+      setRemote((prev) =>
+        (prev ?? []).map((t) => (t.id === id ? { ...input, id } : t)),
+      );
+      const saved = await updateRemoteTarget(id, input);
+      if (saved) {
+        setRemote((prev) => (prev ?? []).map((t) => (t.id === id ? saved : t)));
+      } else {
+        setRemote(snapshot);
+        setPubNote("Couldn't save your change — please try again.");
+      }
+      return;
+    }
+    update(id, input);
+  }
+
+  async function handleRemove(id: string) {
+    if (remote !== null) {
+      const snapshot = remote;
+      setRemote((prev) => (prev ?? []).filter((t) => t.id !== id));
+      if (!(await removeRemoteTarget(id))) {
+        setRemote(snapshot);
+        setPubNote("Couldn't remove that — please try again.");
+      }
+      return;
+    }
+    remove(id);
+  }
+
+  // Remote writes need the whole row, so merge a partial into the full target.
+  function updateTargetFields(
+    target: TargetInstitution,
+    patch: Partial<Omit<TargetInstitution, "id">>,
+  ) {
+    const { id, ...rest } = target;
+    void handleUpdate(id, { ...rest, ...patch });
+  }
+
   function save() {
     if (!draft.institution.trim()) return;
-    if (draft.id) {
-      update(draft.id, draft);
+    const { id, ...fields } = draft;
+    if (id) {
+      const existing = targets.find((t) => t.id === id);
+      if (existing) updateTargetFields(existing, fields);
     } else {
-      add({ ...draft, id: newId(), requirements: [] });
+      void handleAdd({ ...fields, requirements: [] });
     }
     setOpen(false);
   }
@@ -78,7 +181,9 @@ export function GoalsBoard() {
   function addRequirement(target: TargetInstitution, label: string) {
     if (!label.trim()) return;
     const req: RequirementItem = { id: newId(), label: label.trim(), met: false };
-    update(target.id, { requirements: [...target.requirements, req] });
+    updateTargetFields(target, {
+      requirements: [...target.requirements, req],
+    });
   }
 
   function patchRequirement(
@@ -86,7 +191,7 @@ export function GoalsBoard() {
     reqId: string,
     patch: Partial<RequirementItem>,
   ) {
-    update(target.id, {
+    updateTargetFields(target, {
       requirements: target.requirements.map((r) =>
         r.id === reqId ? { ...r, ...patch } : r,
       ),
@@ -94,7 +199,7 @@ export function GoalsBoard() {
   }
 
   function removeRequirement(target: TargetInstitution, reqId: string) {
-    update(target.id, {
+    updateTargetFields(target, {
       requirements: target.requirements.filter((r) => r.id !== reqId),
     });
   }
@@ -113,16 +218,22 @@ export function GoalsBoard() {
         </Button>
       </div>
 
-      {hydrated && items.length === 0 ? (
+      {pubNote && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {pubNote}
+        </p>
+      )}
+
+      {hydrated && targets.length === 0 ? (
         <EmptyState onAdd={openCreate} />
       ) : (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {items.map((t) => (
+          {targets.map((t) => (
             <TargetCard
               key={t.id}
               target={t}
               onEdit={() => openEdit(t)}
-              onDelete={() => remove(t.id)}
+              onDelete={() => handleRemove(t.id)}
               onAddRequirement={(label) => addRequirement(t, label)}
               onToggleRequirement={(reqId, met) =>
                 patchRequirement(t, reqId, { met })

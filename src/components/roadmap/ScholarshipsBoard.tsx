@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Award,
   ExternalLink,
@@ -13,6 +13,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { useLocalCollection, newId } from "@/lib/roadmap/store";
+import {
+  addRemoteScholarship,
+  fetchRemoteScholarships,
+  removeRemoteScholarship,
+  updateRemoteScholarship,
+} from "@/lib/roadmap-db";
 import { seedScholarships } from "@/lib/roadmap/seed";
 import { deadlineState } from "@/lib/roadmap/deadline";
 import { formatDate } from "@/lib/utils";
@@ -27,10 +33,47 @@ export function ScholarshipsBoard() {
     "moacademy.roadmap.scholarships",
     seedScholarships,
   );
+
+  // Signed-in students sync scholarships to Supabase; anonymous stays local.
+  const [remote, setRemote] = useState<Scholarship[] | null>(null);
+  const [pubNote, setPubNote] = useState<string | null>(null);
+  const importedRef = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteScholarships().then((r) => alive && setRemote(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // One-time import: a fresh remote account inherits what's on this device.
+  useEffect(() => {
+    if (importedRef.current) return;
+    if (remote === null || remote.length > 0 || !hydrated) return;
+    // Never import the bundled demo seed, which useLocalCollection
+    // persists even for untouched visitors.
+    const seedIds = new Set(seedScholarships.map((s) => s.id));
+    const own = items.filter((i) => !seedIds.has(i.id));
+    if (own.length === 0) return;
+    importedRef.current = true;
+    (async () => {
+      const created: Scholarship[] = [];
+      for (const s of own) {
+        const { id, ...input } = s;
+        void id;
+        const row = await addRemoteScholarship(input);
+        if (row) created.push(row);
+      }
+      setRemote(created);
+    })();
+  }, [remote, hydrated, items]);
+
+  const scholarships = remote ?? items;
+
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
 
-  const sorted = [...items].sort((a, b) => {
+  const sorted = [...scholarships].sort((a, b) => {
     const av = a.closesAt ? +new Date(a.closesAt) : Infinity;
     const bv = b.closesAt ? +new Date(b.closesAt) : Infinity;
     return av - bv;
@@ -46,23 +89,78 @@ export function ScholarshipsBoard() {
     setOpen(true);
   }
 
-  function save() {
-    if (!draft.name?.trim()) return;
-    const requirements = (draft.requirementsText ?? "")
+  function draftToInput(d: Draft): Omit<Scholarship, "id"> {
+    const requirements = (d.requirementsText ?? "")
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
-    const { requirementsText, ...rest } = draft;
-    void requirementsText;
+    return {
+      name: d.name!.trim(),
+      provider: d.provider ?? "",
+      coverage: d.coverage,
+      closesAt: d.closesAt,
+      url: d.url,
+      requirements,
+      notes: d.notes,
+    };
+  }
+
+  async function handleAdd(input: Omit<Scholarship, "id">) {
+    if (remote !== null) {
+      const temp: Scholarship = { ...input, id: newId() };
+      setRemote((prev) => [temp, ...(prev ?? [])]);
+      const created = await addRemoteScholarship(input);
+      if (created) {
+        setRemote((prev) =>
+          (prev ?? []).map((s) => (s.id === temp.id ? created : s)),
+        );
+      } else {
+        setRemote((prev) => (prev ?? []).filter((s) => s.id !== temp.id));
+        setPubNote("Couldn't save to your account — please try again.");
+      }
+      return;
+    }
+    add({ ...input, id: newId() });
+  }
+
+  async function handleUpdate(id: string, input: Omit<Scholarship, "id">) {
+    if (remote !== null) {
+      const snapshot = remote;
+      setRemote((prev) =>
+        (prev ?? []).map((s) => (s.id === id ? { ...input, id } : s)),
+      );
+      const saved = await updateRemoteScholarship(id, input);
+      if (saved) {
+        setRemote((prev) => (prev ?? []).map((s) => (s.id === id ? saved : s)));
+      } else {
+        setRemote(snapshot);
+        setPubNote("Couldn't save your change — please try again.");
+      }
+      return;
+    }
+    update(id, input);
+  }
+
+  async function handleRemove(id: string) {
+    if (remote !== null) {
+      const snapshot = remote;
+      setRemote((prev) => (prev ?? []).filter((s) => s.id !== id));
+      if (!(await removeRemoteScholarship(id))) {
+        setRemote(snapshot);
+        setPubNote("Couldn't remove that — please try again.");
+      }
+      return;
+    }
+    remove(id);
+  }
+
+  function save() {
+    if (!draft.name?.trim()) return;
+    const input = draftToInput(draft);
     if (draft.id) {
-      update(draft.id, { ...rest, requirements });
+      void handleUpdate(draft.id, input);
     } else {
-      add({
-        ...(rest as Scholarship),
-        id: newId(),
-        provider: draft.provider ?? "",
-        requirements,
-      });
+      void handleAdd(input);
     }
     setOpen(false);
   }
@@ -79,7 +177,13 @@ export function ScholarshipsBoard() {
         </Button>
       </div>
 
-      {hydrated && items.length === 0 ? (
+      {pubNote && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {pubNote}
+        </p>
+      )}
+
+      {hydrated && scholarships.length === 0 ? (
         <EmptyState onAdd={openCreate} />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -101,7 +205,7 @@ export function ScholarshipsBoard() {
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => remove(s.id)}
+                      onClick={() => handleRemove(s.id)}
                       className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
                       aria-label="Delete"
                     >
