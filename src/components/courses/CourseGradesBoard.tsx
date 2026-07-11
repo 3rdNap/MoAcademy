@@ -1,13 +1,21 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection } from "@/lib/local-store";
-import { roster } from "@/lib/roster";
+import { roster as fakeRoster } from "@/lib/roster";
+import {
+  fetchCourseRoster,
+  fetchCourseSubmissions,
+  fetchMySubmissions,
+  upsertGrade,
+  type RemoteSubmission,
+  type RosterStudent,
+} from "@/lib/gradebook-db";
 import { formatDate, initialsOf, letterGrade } from "@/lib/utils";
 import type { Assignment, Course } from "@/lib/types";
 
@@ -54,10 +62,31 @@ function StudentGrades({
   course: Course;
   assignments: Assignment[];
 }) {
-  const graded = assignments.filter(
-    (a) => a.status === "graded" && a.score != null,
-  );
-  const earned = graded.reduce((n, a) => n + (a.score ?? 0), 0);
+  // Real submissions override the seed/local status+score where present; ids
+  // that aren't real assignment rows just won't match anything.
+  const [mySubs, setMySubs] = useState<Record<string, RemoteSubmission>>({});
+  useEffect(() => {
+    let alive = true;
+    fetchMySubmissions(assignments.map((a) => a.id)).then((subs) => {
+      if (!alive || !subs) return;
+      setMySubs(Object.fromEntries(subs.map((s) => [s.assignmentId, s])));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [assignments]);
+
+  function effective(a: Assignment) {
+    const sub = mySubs[a.id];
+    if (!sub) return { status: a.status, score: a.score };
+    return { status: sub.status, score: sub.score ?? undefined };
+  }
+
+  const graded = assignments.filter((a) => {
+    const e = effective(a);
+    return e.status === "graded" && e.score != null;
+  });
+  const earned = graded.reduce((n, a) => n + (effective(a).score ?? 0), 0);
   const possible = graded.reduce((n, a) => n + a.points, 0);
   const pct = possible ? Math.round((earned / possible) * 100) : 0;
 
@@ -92,24 +121,29 @@ function StudentGrades({
             </tr>
           </thead>
           <tbody className="divide-y divide-black/5">
-            {assignments.map((a) => (
-              <tr key={a.id} className="hover:bg-surface-subtle">
-                <td className="px-4 py-3 font-medium text-ink">{a.title}</td>
-                <td className="px-4 py-3 text-ink-muted">{formatDate(a.dueAt)}</td>
-                <td className="px-4 py-3">
-                  {a.status === "graded" ? (
-                    <Badge tone="success">Graded</Badge>
-                  ) : a.status === "missing" ? (
-                    <Badge tone="danger">Missing</Badge>
-                  ) : (
-                    <Badge tone="neutral">Pending</Badge>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right font-medium text-ink">
-                  {a.score != null ? `${a.score}/${a.points}` : `—/${a.points}`}
-                </td>
-              </tr>
-            ))}
+            {assignments.map((a) => {
+              const e = effective(a);
+              return (
+                <tr key={a.id} className="hover:bg-surface-subtle">
+                  <td className="px-4 py-3 font-medium text-ink">{a.title}</td>
+                  <td className="px-4 py-3 text-ink-muted">
+                    {formatDate(a.dueAt)}
+                  </td>
+                  <td className="px-4 py-3">
+                    {e.status === "graded" ? (
+                      <Badge tone="success">Graded</Badge>
+                    ) : e.status === "missing" ? (
+                      <Badge tone="danger">Missing</Badge>
+                    ) : (
+                      <Badge tone="neutral">Pending</Badge>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right font-medium text-ink">
+                    {e.score != null ? `${e.score}/${a.points}` : `—/${a.points}`}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -131,11 +165,57 @@ function InstructorGradebook({
     [],
   );
 
-  const cellId = (sid: string, aid: string) => `${sid}__${aid}`;
-  const getScore = (sid: string, aid: string) =>
-    grades.items.find((g) => g.id === cellId(sid, aid))?.score;
+  // The real enrolled class + their real submissions, for a signed-in teaching
+  // account. Falls back to the fake demo roster/local grades when null/empty
+  // (offline, anonymous, or not a teaching account for this course).
+  const [realRoster, setRealRoster] = useState<RosterStudent[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchCourseRoster(course.id).then((r) => alive && setRealRoster(r));
+    return () => {
+      alive = false;
+    };
+  }, [course.id]);
 
-  function setScore(sid: string, aid: string, raw: string, points: number) {
+  const realMode = Boolean(realRoster && realRoster.length > 0);
+  const activeRoster: { id: string; name: string }[] = realMode
+    ? realRoster!
+    : fakeRoster;
+
+  const cellId = (sid: string, aid: string) => `${sid}__${aid}`;
+
+  const [realScores, setRealScores] = useState<Record<string, number | null>>(
+    {},
+  );
+  useEffect(() => {
+    if (!realMode) return;
+    let alive = true;
+    fetchCourseSubmissions(assignments.map((a) => a.id)).then((subs) => {
+      if (!alive || !subs) return;
+      setRealScores(
+        Object.fromEntries(
+          subs.map((s) => [cellId(s.userId, s.assignmentId), s.score]),
+        ),
+      );
+    });
+    return () => {
+      alive = false;
+    };
+  }, [realMode, assignments]);
+
+  const getScore = (sid: string, aid: string): number | undefined =>
+    realMode
+      ? realScores[cellId(sid, aid)] ?? undefined
+      : grades.items.find((g) => g.id === cellId(sid, aid))?.score;
+
+  async function setScore(sid: string, aid: string, raw: string, points: number) {
+    if (realMode) {
+      const score = raw === "" ? null : Math.max(0, Math.min(points, Number(raw)));
+      if (score !== null && Number.isNaN(score)) return;
+      setRealScores((prev) => ({ ...prev, [cellId(sid, aid)]: score }));
+      await upsertGrade(aid, sid, { score });
+      return;
+    }
     const id = cellId(sid, aid);
     const existing = grades.items.find((g) => g.id === id);
     if (raw === "") {
@@ -162,7 +242,7 @@ function InstructorGradebook({
   }
 
   function assignmentAvg(aid: string, points: number) {
-    const scores = roster
+    const scores = activeRoster
       .map((s) => getScore(s.id, aid))
       .filter((v): v is number => v != null);
     if (scores.length === 0) return null;
@@ -174,7 +254,7 @@ function InstructorGradebook({
     <>
       <PageHeader
         title="Gradebook"
-        subtitle={`${roster.length} students · ${assignments.length} assignments in ${course.code}. Enter scores — they save automatically.`}
+        subtitle={`${activeRoster.length} students · ${assignments.length} assignments in ${course.code}. Enter scores — they save automatically.`}
       />
 
       <div className="card overflow-x-auto">
@@ -198,7 +278,7 @@ function InstructorGradebook({
             </tr>
           </thead>
           <tbody className="divide-y divide-black/5">
-            {roster.map((s) => {
+            {activeRoster.map((s) => {
               const pct = studentPct(s.id);
               return (
                 <tr key={s.id} className="hover:bg-surface-subtle">
@@ -266,9 +346,11 @@ function InstructorGradebook({
       </div>
 
       <p className="mt-3 text-xs text-ink-faint">
-        Scores are capped at each assignment&apos;s points and saved in your
-        browser. Switch to the Student view (top bar) to see the learner&apos;s
-        own grade page.
+        {realMode
+          ? "Scores are capped at each assignment's points and saved to each student's real gradebook."
+          : "Scores are capped at each assignment's points and saved in your browser."}{" "}
+        Switch to the Student view (top bar) to see the learner&apos;s own grade
+        page.
       </p>
     </>
   );

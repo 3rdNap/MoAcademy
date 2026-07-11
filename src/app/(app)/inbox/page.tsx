@@ -2,7 +2,7 @@ import {
   InboxBoard,
   type SeedConversation,
 } from "@/components/inbox/InboxBoard";
-import { getCourses, getCurrentUser } from "@/lib/data";
+import { getCourses, getCourseRoster, getCurrentUser } from "@/lib/data";
 import { inboxSeed } from "@/lib/inbox-seed";
 import { roster } from "@/lib/roster";
 
@@ -25,12 +25,14 @@ export default async function InboxPage() {
     };
   });
 
-  // Suggestions for the "To" field: course instructors + classmates.
+  // Suggestions for the "To" field: course instructors + classmates. Real
+  // enrolled classmates where available, else the demo roster.
+  const rosters = await Promise.all(courses.map((c) => getCourseRoster(c.id)));
+  const classmates = rosters.flatMap((r) =>
+    r !== null ? r.map((m) => m.name) : roster.map((s) => s.name),
+  );
   const recipients = Array.from(
-    new Set([
-      ...courses.map((c) => c.instructor),
-      ...roster.map((s) => s.name),
-    ]),
+    new Set([...courses.map((c) => c.instructor), ...classmates]),
   );
 
   return (

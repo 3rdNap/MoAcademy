@@ -18,6 +18,11 @@ import {
   updateRemoteAssignment,
 } from "@/lib/course-content-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
+import {
+  fetchMySubmissions,
+  upsertMySubmission,
+  type RemoteSubmission,
+} from "@/lib/gradebook-db";
 import { itemIcon } from "@/lib/itemMeta";
 import { formatDateTime, relativeTime } from "@/lib/utils";
 import type { Assignment, Course, SubmissionStatus } from "@/lib/types";
@@ -101,6 +106,20 @@ export function CourseAssignmentsBoard({
     };
   }, [course.id]);
 
+  // My real submissions to shared assignments — reaches the instructor.
+  const [mySubs, setMySubs] = useState<Record<string, RemoteSubmission>>({});
+  useEffect(() => {
+    if (!remote || remote.length === 0) return;
+    let alive = true;
+    fetchMySubmissions(remote.map((a) => a.id)).then((subs) => {
+      if (!alive || !subs) return;
+      setMySubs(Object.fromEntries(subs.map((s) => [s.assignmentId, s])));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [remote]);
+
   /** "Draft with Mo": generate the student-facing description server-side. */
   async function draftWithMo() {
     if (!draft.title.trim() || aiBusy) return;
@@ -133,10 +152,22 @@ export function CourseAssignmentsBoard({
     }
   }
 
-  const submissionFor = (aid: string) =>
-    submissions.items.find((s) => s.id === aid);
+  function submissionFor(aid: string): Submission | undefined {
+    const remoteSub = remote?.some((a) => a.id === aid) ? mySubs[aid] : undefined;
+    if (remoteSub) {
+      return {
+        id: aid,
+        body: remoteSub.body,
+        fileName: remoteSub.fileName,
+        submittedAt: remoteSub.submittedAt ?? "",
+      };
+    }
+    return submissions.items.find((s) => s.id === aid);
+  }
 
   function effectiveStatus(a: Assignment): SubmissionStatus {
+    const remoteSub = remote?.some((x) => x.id === a.id) ? mySubs[a.id] : undefined;
+    if (remoteSub) return remoteSub.status;
     if (a.status === "graded") return "graded";
     return submissionFor(a.id) ? "submitted" : a.status;
   }
@@ -148,9 +179,26 @@ export function CourseAssignmentsBoard({
     setSubFile(existing?.fileName);
   }
 
-  function submitWork() {
+  async function submitWork() {
     if (!submitFor) return;
-    const existing = submissionFor(submitFor.id);
+    const isRemoteAssignment = remote?.some((a) => a.id === submitFor.id);
+    if (isRemoteAssignment && signedIn) {
+      const result = await upsertMySubmission(submitFor.id, {
+        body: subBody.trim(),
+        fileName: subFile,
+      });
+      if (result) {
+        setMySubs((prev) => ({ ...prev, [submitFor.id]: result }));
+        setSubmitFor(null);
+        setSubBody("");
+        setSubFile(undefined);
+        return;
+      }
+      setPubNote(
+        "Couldn't submit to your instructor — saved on this device instead.",
+      );
+    }
+    const existing = submissions.items.find((s) => s.id === submitFor.id);
     const record: Submission = {
       id: submitFor.id,
       body: subBody.trim(),
@@ -318,17 +366,23 @@ export function CourseAssignmentsBoard({
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {a.status === "graded" && a.score != null ? (
-                  <p className="text-lg font-bold text-ink">
-                    {a.score}
-                    <span className="text-sm font-normal text-ink-faint">
-                      /{a.points}
-                    </span>
-                  </p>
-                ) : (
-                  <p className="text-sm text-ink-faint">—/{a.points}</p>
-                )}
-                {!teaching && a.status !== "graded" && (
+                {(() => {
+                  const remoteScore = remote?.some((x) => x.id === a.id)
+                    ? mySubs[a.id]?.score
+                    : undefined;
+                  const score = remoteScore ?? a.score;
+                  return status === "graded" && score != null ? (
+                    <p className="text-lg font-bold text-ink">
+                      {score}
+                      <span className="text-sm font-normal text-ink-faint">
+                        /{a.points}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-ink-faint">—/{a.points}</p>
+                  );
+                })()}
+                {!teaching && status !== "graded" && (
                   <Button
                     size="sm"
                     variant={sub ? "outline" : "primary"}
@@ -498,8 +552,9 @@ export function CourseAssignmentsBoard({
             )}
           </div>
           <p className="text-xs text-ink-faint">
-            Demo submission — your work is saved in this browser and the status
-            updates to “Submitted”.
+            {submitFor && remote?.some((a) => a.id === submitFor.id) && signedIn
+              ? "This goes to your instructor and updates the status to “Submitted”."
+              : "Demo submission — your work is saved in this browser and the status updates to “Submitted”."}
           </p>
         </div>
       </Modal>

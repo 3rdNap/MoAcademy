@@ -225,6 +225,58 @@ export async function getChildCourses(childId: string): Promise<Course[]> {
   }
 }
 
+export interface RosterMember {
+  id: string;
+  name: string;
+  email: string;
+  avatarColor: string;
+}
+
+/** The real enrolled students for a course (subject), for a signed-in
+ *  teaching account (or null if not applicable/offline — callers fall back
+ *  to the bundled demo roster). */
+export async function getCourseRoster(
+  courseId: string,
+): Promise<RosterMember[] | null> {
+  const code = subjects.find((s) => s.id === courseId)?.code;
+  if (!code) return null;
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return null;
+
+  let ids: string[];
+  try {
+    const { data, error } = await supabase
+      .from("subject_enrollments")
+      .select("user_id")
+      .eq("subject_code", code)
+      .eq("role", "student")
+      .eq("term", CURRENT_TERM);
+    // An RLS-empty result for a non-teacher surfaces as [] here, which is a
+    // real "no roster to show" state and falls back below; a query error is a
+    // genuine "can't determine a roster" and returns null.
+    if (error) return null;
+    ids = (data ?? []).map((r) => r.user_id as string);
+  } catch {
+    return null;
+  }
+  if (ids.length === 0) return [];
+
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, avatar_color")
+      .in("id", ids);
+    return (data ?? []).map((p) => ({
+      id: p.id as string,
+      name: (p.full_name as string) ?? "",
+      email: (p.email as string) ?? "",
+      avatarColor: (p.avatar_color as string) ?? "#0284c7",
+    }));
+  } catch {
+    return null;
+  }
+}
+
 /** Published assignments across a set of course ids (course_key), soonest first. */
 export async function getAssignmentsForCourses(
   courseIds: string[],
