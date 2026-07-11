@@ -912,3 +912,53 @@ export async function getRecentGrades(days = 14): Promise<RecentGrade[]> {
     return [];
   }
 }
+
+export interface ChildCourseGrade {
+  courseId: string;
+  graded: number; // count of graded items
+  earned: number; // points earned
+  possible: number; // points possible across graded items
+}
+
+interface RawChildSubmission {
+  score: number | null;
+  assignments: {
+    course_key: string | null;
+    course_id?: string | null;
+    points: number;
+  } | null;
+}
+
+/** Per-course grade rollup for a linked child (guardian RLS, migration 0017). */
+export async function getChildGrades(childId: string): Promise<ChildCourseGrade[]> {
+  const { authed, role } = await getAuthState();
+  if (!authed || role !== "parent") return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("submissions")
+      .select("score, assignments(course_key, course_id, points)")
+      .eq("user_id", childId)
+      .not("score", "is", null);
+    const rows = (data ?? []) as unknown as RawChildSubmission[];
+    const byCourse = new Map<string, ChildCourseGrade>();
+    for (const r of rows) {
+      if (r.score == null || !r.assignments) continue;
+      const courseId = r.assignments.course_key ?? r.assignments.course_id ?? "";
+      const existing = byCourse.get(courseId) ?? {
+        courseId,
+        graded: 0,
+        earned: 0,
+        possible: 0,
+      };
+      existing.graded += 1;
+      existing.earned += r.score;
+      existing.possible += r.assignments.points;
+      byCourse.set(courseId, existing);
+    }
+    return Array.from(byCourse.values());
+  } catch {
+    return [];
+  }
+}

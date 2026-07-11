@@ -11,15 +11,16 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Widget } from "@/components/ui/Widget";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
-import { daysUntil, formatDate, formatDateTime } from "@/lib/utils";
+import { daysUntil, formatDate, formatDateTime, letterGrade } from "@/lib/utils";
 import type { Announcement, Assignment, Course } from "@/lib/types";
-import type { GuardianChild } from "@/lib/data";
+import type { ChildCourseGrade, GuardianChild } from "@/lib/data";
 
 export interface ChildView {
   child: GuardianChild;
   courses: Course[];
   upcoming: Assignment[];
   announcements: Announcement[];
+  grades: ChildCourseGrade[];
 }
 
 /**
@@ -51,12 +52,21 @@ export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) 
     );
   }
 
-  const { child, courses, upcoming, announcements } = current;
+  const { child, courses, upcoming, announcements, grades } = current;
   const initials = child.name
     .split(" ")
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase() ?? "")
     .join("");
+
+  const gradesByCourse = new Map(grades.map((g) => [g.courseId, g]));
+  const overall = grades.reduce(
+    (acc, g) => ({ earned: acc.earned + g.earned, possible: acc.possible + g.possible }),
+    { earned: 0, possible: 0 },
+  );
+  const overallPct = overall.possible
+    ? Math.round((overall.earned / overall.possible) * 100)
+    : null;
 
   return (
     <>
@@ -129,9 +139,16 @@ export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Courses */}
         <section className="lg:col-span-2">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-faint">
-            {child.name.split(" ")[0]}&apos;s courses
-          </h2>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-faint">
+              {child.name.split(" ")[0]}&apos;s courses
+            </h2>
+            {overallPct != null && (
+              <Badge tone="neutral">
+                Overall {overallPct}% · {letterGrade(overallPct)}
+              </Badge>
+            )}
+          </div>
           {courses.length === 0 ? (
             <div className="card p-6 text-sm text-ink-muted">
               {child.name.split(" ")[0]} hasn&apos;t registered for any subjects
@@ -139,21 +156,38 @@ export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) 
             </div>
           ) : (
             <div className="card divide-y divide-black/5">
-              {courses.map((course) => (
-                <div key={course.id} className="flex items-center gap-4 p-4">
-                  <span
-                    className="h-10 w-1.5 rounded-full"
-                    style={{ backgroundColor: course.color }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-ink">{course.name}</p>
-                    <p className="text-xs text-ink-faint">
-                      {course.code} · {course.instructor}
-                    </p>
+              {courses.map((course) => {
+                const grade = gradesByCourse.get(course.id);
+                const hasGrade = grade && grade.possible > 0;
+                const coursePct = hasGrade
+                  ? Math.round((grade.earned / grade.possible) * 100)
+                  : null;
+                return (
+                  <div key={course.id} className="flex items-center gap-4 p-4">
+                    <span
+                      className="h-10 w-1.5 rounded-full"
+                      style={{ backgroundColor: course.color }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-ink">{course.name}</p>
+                      <p className="text-xs text-ink-faint">
+                        {course.code} · {course.instructor}
+                      </p>
+                    </div>
+                    {hasGrade && coursePct != null && (
+                      <div className="text-right">
+                        <p className="text-sm font-bold leading-none text-ink">
+                          {coursePct}% · {letterGrade(coursePct)}
+                        </p>
+                        <p className="text-xs text-ink-faint">
+                          {grade.earned}/{grade.possible} pts
+                        </p>
+                      </div>
+                    )}
+                    <Badge tone="neutral">{course.term}</Badge>
                   </div>
-                  <Badge tone="neutral">{course.term}</Badge>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

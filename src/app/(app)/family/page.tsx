@@ -8,6 +8,7 @@ import {
   getAssignmentsForCourses,
   getAuthState,
   getChildCourses,
+  getChildGrades,
   getCourses,
   getGuardianChildren,
 } from "@/lib/data";
@@ -25,14 +26,21 @@ export default async function FamilyPage() {
       children.map(async (child) => {
         const courses = await getChildCourses(child.id);
         const courseIds = courses.map((c) => c.id);
-        const [assignments, announcements] = await Promise.all([
+        const [assignments, announcements, grades] = await Promise.all([
           getAssignmentsForCourses(courseIds),
           getAnnouncementsForCourses(courseIds),
+          getChildGrades(child.id),
         ]);
         const upcoming = assignments
           .filter((a) => daysUntil(a.dueAt) >= 0 && daysUntil(a.dueAt) <= 14)
           .slice(0, 8);
-        return { child, courses, upcoming, announcements: announcements.slice(0, 6) };
+        return {
+          child,
+          courses,
+          upcoming,
+          announcements: announcements.slice(0, 6),
+          grades,
+        };
       }),
     );
     return <GuardianFamily childrenData={childrenData} />;
