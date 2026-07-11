@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { useLocalCollection } from "@/lib/local-store";
 import { fetchRecentRemoteAnnouncements } from "@/lib/course-content-db";
+import { fetchMyMessages, type RemoteMessage } from "@/lib/inbox-db";
+import { getSignedInUserId } from "@/lib/study-guides-db";
 import type { Announcement, Assignment } from "@/lib/types";
 import type { RecentGrade } from "@/lib/data";
 import { inboxSeed } from "@/lib/inbox-seed";
@@ -68,6 +70,20 @@ export function NotificationBell({
     };
   }, []);
 
+  // Unread real inbox messages received by the signed-in user.
+  const [unreadMessages, setUnreadMessages] = useState<RemoteMessage[]>([]);
+  useEffect(() => {
+    if (!authed) return;
+    let alive = true;
+    Promise.all([getSignedInUserId(), fetchMyMessages()]).then(([id, msgs]) => {
+      if (!alive || !id || !msgs) return;
+      setUnreadMessages(msgs.filter((m) => m.recipientId === id && !m.readAt));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [authed]);
+
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -90,6 +106,24 @@ export function NotificationBell({
           detail: m.subject,
           href: "/inbox",
           at: m.at,
+        });
+      }
+    }
+
+    // Unread real messages (signed-in), newest 5 to avoid flooding the bell.
+    if (authed) {
+      const recent = [...unreadMessages]
+        .sort((a, b) => +new Date(b.sentAt) - +new Date(a.sentAt))
+        .slice(0, 5);
+      for (const m of recent) {
+        list.push({
+          id: `rmsg-${m.id}`,
+          icon: Mail,
+          tone: "bg-sky-50 text-sky-600",
+          title: `New message from ${m.senderName}`,
+          detail: m.subject || `${m.body.slice(0, 80)}${m.body.length > 80 ? "…" : ""}`,
+          href: "/inbox",
+          at: m.sentAt,
         });
       }
     }
@@ -192,7 +226,7 @@ export function NotificationBell({
     }
 
     return list.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-  }, [read.items, apps.items, scholarships.items, published, authed, upcoming, recentGrades]);
+  }, [read.items, apps.items, scholarships.items, published, unreadMessages, authed, upcoming, recentGrades]);
 
   const count = mounted ? notes.length : 0;
 

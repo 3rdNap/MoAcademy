@@ -205,7 +205,12 @@ export async function getChildCourses(childId: string): Promise<Course[]> {
         .eq("term", CURRENT_TERM);
       const enrolled = new Set((enr ?? []).map((r) => r.subject_code as string));
       if (enrolled.size > 0) {
-        return subjects.filter((s) => enrolled.has(s.code)).map(subjectToCourse);
+        const chosen = subjects.filter((s) => enrolled.has(s.code));
+        const names = await instructorNamesFor(
+          chosen.map((s) => s.code),
+          supabase,
+        );
+        return chosen.map((s) => subjectToCourse(s, names.get(s.code)));
       }
     } catch {
       /* subject_enrollments not migrated yet */
@@ -219,7 +224,9 @@ export async function getChildCourses(childId: string): Promise<Course[]> {
     for (const r of (regs ?? []) as { registration_items?: { code: string }[] }[]) {
       for (const it of r.registration_items ?? []) codes.add(it.code);
     }
-    return subjects.filter((s) => codes.has(s.code)).map(subjectToCourse);
+    const chosen = subjects.filter((s) => codes.has(s.code));
+    const names = await instructorNamesFor(chosen.map((s) => s.code), supabase);
+    return chosen.map((s) => subjectToCourse(s, names.get(s.code)));
   } catch {
     return [];
   }
@@ -395,7 +402,7 @@ export async function getAnnouncementsForCourses(
 }
 
 /** A registered subject becomes the student's course. */
-function subjectToCourse(s: Subject): Course {
+function subjectToCourse(s: Subject, instructorName = "To be assigned"): Course {
   let h = 0;
   for (let i = 0; i < s.id.length; i++) h = s.id.charCodeAt(i) + ((h << 5) - h);
   return {
@@ -406,11 +413,60 @@ function subjectToCourse(s: Subject): Course {
     term: CURRENT_TERM,
     description: `${s.name} · ${s.category}`,
     color: `hsl(${Math.abs(h) % 360} 62% 45%)`,
-    instructor: "To be assigned",
+    instructor: instructorName,
     credits: 1,
     published: true,
     progress: 0,
   };
+}
+
+type SupabaseClient = NonNullable<
+  Awaited<ReturnType<typeof createSupabaseServerClient>>
+>;
+
+/**
+ * Real instructor display names for the given subject codes, keyed by code.
+ * Resolves `subject_enrollments` teaching rows → `profiles.full_name` under
+ * existing RLS (course-mates and admins can read both). Degrades to an empty
+ * map on any error or when RLS returns nothing (e.g. guardians), leaving
+ * callers with the "To be assigned" default.
+ */
+async function instructorNamesFor(
+  codes: string[],
+  supabase: SupabaseClient,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (codes.length === 0) return map;
+  try {
+    const { data: teach } = await supabase
+      .from("subject_enrollments")
+      .select("subject_code, user_id")
+      .eq("role", "instructor")
+      .eq("term", CURRENT_TERM)
+      .in("subject_code", codes);
+    const rows = (teach ?? []) as { subject_code: string; user_id: string }[];
+    const ids = Array.from(new Set(rows.map((r) => r.user_id)));
+    if (ids.length === 0) return map;
+
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", ids);
+    const names = new Map<string, string>();
+    for (const p of (profs ?? []) as { id: string; full_name: string | null }[]) {
+      if (p.full_name) names.set(p.id, p.full_name);
+    }
+
+    for (const r of rows) {
+      const name = names.get(r.user_id);
+      if (!name) continue;
+      const existing = map.get(r.subject_code);
+      map.set(r.subject_code, existing ? `${existing}, ${name}` : name);
+    }
+  } catch {
+    /* RLS/offline — leave names unresolved */
+  }
+  return map;
 }
 
 // ---------------------------------------------------------------------------
@@ -596,7 +652,15 @@ export const getCourses = cache(async (): Promise<Course[]> => {
           .eq("id", user.id)
           .maybeSingle();
         const role = (profile?.role as Role) ?? "student";
-        if (role === "admin") return subjects.map(subjectToCourse);
+        const toCourses = async (chosen: Subject[]): Promise<Course[]> => {
+          const names = await instructorNamesFor(
+            chosen.map((s) => s.code),
+            supabase,
+          );
+          return chosen.map((s) => subjectToCourse(s, names.get(s.code)));
+        };
+
+        if (role === "admin") return toCourses(subjects);
 
         // Institutional model: courses are the subjects an admin has enrolled
         // this person into (as student, or as instructor if they teach it).
@@ -610,14 +674,14 @@ export const getCourses = cache(async (): Promise<Course[]> => {
             .eq("term", CURRENT_TERM);
           const enrolled = new Set((enr ?? []).map((r) => r.subject_code as string));
           if (enrolled.size > 0) {
-            return subjects.filter((s) => enrolled.has(s.code)).map(subjectToCourse);
+            return toCourses(subjects.filter((s) => enrolled.has(s.code)));
           }
         } catch {
           /* subject_enrollments not migrated yet — fall through */
         }
 
         // Instructors with no explicit teaching assignment see the catalogue.
-        if (role === "instructor") return subjects.map(subjectToCourse);
+        if (role === "instructor") return toCourses(subjects);
 
         // Legacy fallback: subjects a student previously paid to register for.
         const { data: regs } = await supabase
@@ -629,7 +693,7 @@ export const getCourses = cache(async (): Promise<Course[]> => {
         for (const r of (regs ?? []) as { registration_items?: { code: string }[] }[]) {
           for (const it of r.registration_items ?? []) codes.add(it.code);
         }
-        return subjects.filter((s) => codes.has(s.code)).map(subjectToCourse);
+        return toCourses(subjects.filter((s) => codes.has(s.code)));
       }
     } catch {
       /* fall through to demo */
