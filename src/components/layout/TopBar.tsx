@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
-import type { Course, User } from "@/lib/types";
+import type { Assignment, Course, User } from "@/lib/types";
+import type { RecentGrade } from "@/lib/data";
 import { CourseSwitcher } from "./CourseSwitcher";
 import { GlobalSearch } from "./GlobalSearch";
 import { ThemeToggle } from "./ThemeToggle";
@@ -16,10 +17,14 @@ export function TopBar({
   user,
   courses,
   authed = false,
+  upcoming,
+  recentGrades,
 }: {
   user: User;
   courses: Course[];
   authed?: boolean;
+  upcoming?: Assignment[];
+  recentGrades?: RecentGrade[];
 }) {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-black/5 bg-surface/90 px-3 backdrop-blur sm:gap-3 sm:px-4 md:pl-6 print:hidden">
@@ -53,7 +58,11 @@ export function TopBar({
         <GlobalSearch />
 
         <ThemeToggle />
-        <NotificationBell authed={authed} />
+        <NotificationBell
+          authed={authed}
+          upcoming={upcoming}
+          recentGrades={recentGrades}
+        />
 
         <Link
           href="/account"

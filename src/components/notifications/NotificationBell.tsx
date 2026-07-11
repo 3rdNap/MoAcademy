@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import { useLocalCollection } from "@/lib/local-store";
 import { fetchRecentRemoteAnnouncements } from "@/lib/course-content-db";
-import type { Announcement } from "@/lib/types";
+import type { Announcement, Assignment } from "@/lib/types";
+import type { RecentGrade } from "@/lib/data";
 import { inboxSeed } from "@/lib/inbox-seed";
 import { seedApplications, seedScholarships } from "@/lib/roadmap/seed";
 import * as seed from "@/lib/data/seed";
@@ -31,7 +32,15 @@ interface Note {
   at: string;
 }
 
-export function NotificationBell({ authed = false }: { authed?: boolean }) {
+export function NotificationBell({
+  authed = false,
+  upcoming,
+  recentGrades,
+}: {
+  authed?: boolean;
+  upcoming?: Assignment[];
+  recentGrades?: RecentGrade[];
+}) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -119,9 +128,10 @@ export function NotificationBell({ authed = false }: { authed?: boolean }) {
       }
     }
 
-    // Assignments due within 7 days (demo seed only; real deadlines will come
-    // from published assignments once instructors add them).
-    for (const a of authed ? [] : seed.assignments) {
+    // Assignments due within 7 days — real ones when signed in, demo seed
+    // otherwise. getUpcoming() already filters out graded/past-due work but
+    // doesn't cap the window, so keep the 7-day check here.
+    for (const a of authed ? upcoming ?? [] : seed.assignments) {
       const days = daysUntil(a.dueAt);
       if (a.status !== "graded" && days >= 0 && days <= 7) {
         const course = seed.courses.find((c) => c.id === a.courseId);
@@ -151,23 +161,38 @@ export function NotificationBell({ authed = false }: { authed?: boolean }) {
       });
     }
 
-    // Recent grades (demo seed only).
-    for (const ev of authed ? [] : seed.activity) {
-      if (ev.kind === "grade") {
+    // Recent grades — real ones when signed in, demo seed otherwise.
+    if (authed) {
+      for (const g of recentGrades ?? []) {
+        const course = seed.courses.find((c) => c.id === g.courseId);
         list.push({
-          id: `grade-${ev.id}`,
+          id: `grade-${g.id}`,
           icon: GraduationCap,
           tone: "bg-emerald-50 text-emerald-600",
-          title: ev.title,
-          detail: ev.detail,
-          href: ev.courseId ? `/courses/${ev.courseId}/grades` : "/grades",
-          at: ev.at,
+          title: `${g.title} graded`,
+          detail: `${course?.code ? `${course.code} · ` : ""}${g.score}/${g.points}`,
+          href: `/courses/${g.courseId}/grades`,
+          at: g.gradedAt,
         });
+      }
+    } else {
+      for (const ev of seed.activity) {
+        if (ev.kind === "grade") {
+          list.push({
+            id: `grade-${ev.id}`,
+            icon: GraduationCap,
+            tone: "bg-emerald-50 text-emerald-600",
+            title: ev.title,
+            detail: ev.detail,
+            href: ev.courseId ? `/courses/${ev.courseId}/grades` : "/grades",
+            at: ev.at,
+          });
+        }
       }
     }
 
     return list.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-  }, [read.items, apps.items, scholarships.items, published, authed]);
+  }, [read.items, apps.items, scholarships.items, published, authed, upcoming, recentGrades]);
 
   const count = mounted ? notes.length : 0;
 

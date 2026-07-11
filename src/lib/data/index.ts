@@ -697,7 +697,15 @@ export async function getActivity(): Promise<ActivityEvent[]> {
 
 export async function getCalendar(): Promise<CalendarEvent[]> {
   const { authed } = await getAuthState();
-  return authed ? [] : seed.calendar;
+  if (!authed) return seed.calendar;
+  const assignments = await getAssignments();
+  return assignments.map((a) => ({
+    id: a.id,
+    courseId: a.courseId,
+    title: a.title,
+    at: a.dueAt,
+    type: a.type === "discussion" ? "event" : a.type,
+  }));
 }
 
 /** Assignments due in the future, soonest first. */
@@ -707,4 +715,61 @@ export async function getUpcoming(now = new Date()): Promise<Assignment[]> {
     .filter((a) => new Date(a.dueAt).getTime() >= now.getTime() - 86400000)
     .filter((a) => a.status !== "graded")
     .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+}
+
+export interface RecentGrade {
+  id: string; // assignment id
+  courseId: string;
+  title: string;
+  score: number;
+  points: number;
+  gradedAt: string;
+}
+
+interface RawGradedSubmission {
+  assignment_id: string;
+  score: number | null;
+  graded_at: string | null;
+  assignments: {
+    title: string;
+    course_key: string | null;
+    course_id?: string | null;
+    points: number;
+  } | null;
+}
+
+/** The signed-in user's own graded work in the last `days` days, newest first. */
+export async function getRecentGrades(days = 14): Promise<RecentGrade[]> {
+  const { authed, userId } = await getAuthState();
+  if (!authed || !userId) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const { data } = await supabase
+      .from("submissions")
+      .select(
+        "assignment_id, score, graded_at, assignments(title, course_key, course_id, points)",
+      )
+      .eq("user_id", userId)
+      .not("graded_at", "is", null)
+      .gte("graded_at", since)
+      .order("graded_at", { ascending: false });
+    const rows = (data ?? []) as unknown as RawGradedSubmission[];
+    const grades: RecentGrade[] = [];
+    for (const r of rows) {
+      if (r.score == null || !r.graded_at || !r.assignments) continue;
+      grades.push({
+        id: r.assignment_id,
+        courseId: r.assignments.course_key ?? r.assignments.course_id ?? "",
+        title: r.assignments.title,
+        score: r.score,
+        points: r.assignments.points,
+        gradedAt: r.graded_at,
+      });
+    }
+    return grades;
+  } catch {
+    return [];
+  }
 }
