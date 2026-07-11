@@ -277,6 +277,81 @@ export async function getCourseRoster(
   }
 }
 
+export interface MessageContact {
+  id: string;
+  name: string;
+}
+
+/**
+ * Who the signed-in user may message: admins can reach everyone; everyone
+ * else sees their real course-mates (anyone sharing a subject+term
+ * enrolment) — mirrors the RLS in migration 0021. Null when signed
+ * out/offline, so the inbox falls back to the demo roster.
+ */
+export const getMessageContacts = cache(
+  async (): Promise<MessageContact[] | null> => {
+    const { authed, userId, role } = await getAuthState();
+    if (!authed || !userId) return null;
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) return null;
+    try {
+      if (role === "admin") {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .neq("id", userId);
+        if (error) return null;
+        return (data ?? [])
+          .map((p) => ({
+            id: p.id as string,
+            name: (p.full_name as string) ?? "",
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      const { data: mine, error: mineError } = await supabase
+        .from("subject_enrollments")
+        .select("subject_code")
+        .eq("user_id", userId)
+        .eq("term", CURRENT_TERM);
+      if (mineError) return null;
+      const codes = Array.from(
+        new Set((mine ?? []).map((r) => r.subject_code as string)),
+      );
+      if (codes.length === 0) return [];
+
+      const { data: mates, error: matesError } = await supabase
+        .from("subject_enrollments")
+        .select("user_id")
+        .in("subject_code", codes)
+        .eq("term", CURRENT_TERM);
+      if (matesError) return null;
+      const ids = Array.from(
+        new Set(
+          (mates ?? [])
+            .map((r) => r.user_id as string)
+            .filter((id) => id !== userId),
+        ),
+      );
+      if (ids.length === 0) return [];
+
+      const { data: profs, error: profError } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", ids);
+      if (profError) return null;
+      return (profs ?? [])
+        .map((p) => ({
+          id: p.id as string,
+          name: (p.full_name as string) ?? "",
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      return null;
+    }
+  },
+);
+
 /** Published assignments across a set of course ids (course_key), soonest first. */
 export async function getAssignmentsForCourses(
   courseIds: string[],

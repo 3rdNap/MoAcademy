@@ -14,6 +14,13 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { useLocalCollection, newId } from "@/lib/local-store";
+import {
+  fetchMyMessages,
+  markThreadRead,
+  sendRemoteMessage,
+  type RemoteMessage,
+} from "@/lib/inbox-db";
+import { getSignedInUserId } from "@/lib/study-guides-db";
 import { initialsOf, relativeTime } from "@/lib/utils";
 
 export interface SeedConversation {
@@ -25,6 +32,11 @@ export interface SeedConversation {
   preview: string;
   at: string;
   unread: boolean;
+}
+
+export interface InboxRecipient {
+  id?: string;
+  name: string;
 }
 
 interface LocalConversation {
@@ -40,6 +52,7 @@ interface Message {
   author: string;
   body: string;
   at: string;
+  mine?: boolean;
 }
 
 interface Conversation {
@@ -50,6 +63,8 @@ interface Conversation {
   color?: string;
   at: string;
   local: boolean;
+  remote?: boolean;
+  peerId?: string;
   seedPreview?: string;
 }
 
@@ -60,7 +75,7 @@ export function InboxBoard({
 }: {
   userName: string;
   seedConversations: SeedConversation[];
-  recipients: string[];
+  recipients: InboxRecipient[];
 }) {
   const localConvos = useLocalCollection<LocalConversation>(
     "moacademy.inbox.conversations",
@@ -73,6 +88,26 @@ export function InboxBoard({
   const [composeOpen, setComposeOpen] = useState(false);
   const [draft, setDraft] = useState({ to: "", subject: "", body: "" });
   const [composer, setComposer] = useState("");
+
+  // Real threads (Supabase): signed-in users get their actual messages;
+  // signed-out visitors keep the browser-local demo inbox.
+  const [remote, setRemote] = useState<RemoteMessage[] | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
+  const [myId, setMyId] = useState<string | null>(null);
+  const [pubNote, setPubNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getSignedInUserId().then((id) => {
+      if (!alive) return;
+      setSignedIn(Boolean(id));
+      setMyId(id);
+    });
+    fetchMyMessages().then((msgs) => alive && setRemote(msgs));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Deep link from the People page: /inbox?to=Name opens the composer.
   useEffect(() => {
@@ -87,8 +122,35 @@ export function InboxBoard({
     }
   }, []);
 
+  const remoteConversations: Conversation[] = useMemo(() => {
+    if (!remote || !myId) return [];
+    const byPeer = new Map<string, RemoteMessage[]>();
+    for (const m of remote) {
+      const peerId = m.senderId === myId ? m.recipientId : m.senderId;
+      const list = byPeer.get(peerId) ?? [];
+      list.push(m);
+      byPeer.set(peerId, list);
+    }
+    return Array.from(byPeer.entries()).map(([peerId, msgs]) => {
+      const sorted = [...msgs].sort(
+        (a, b) => +new Date(a.sentAt) - +new Date(b.sentAt),
+      );
+      const last = sorted[sorted.length - 1];
+      return {
+        id: `peer-${peerId}`,
+        with: last.senderId === myId ? last.recipientName : last.senderName,
+        subject: last.subject || "(no subject)",
+        at: last.sentAt,
+        local: false,
+        remote: true,
+        peerId,
+      };
+    });
+  }, [remote, myId]);
+
   const conversations: Conversation[] = useMemo(
     () => [
+      ...remoteConversations,
       ...localConvos.items.map((c) => ({
         id: c.id,
         with: c.with,
@@ -107,10 +169,25 @@ export function InboxBoard({
         seedPreview: c.preview,
       })),
     ],
-    [localConvos.items, seedConversations],
+    [remoteConversations, localConvos.items, seedConversations],
   );
 
   const threadMessages = (c: Conversation): Message[] => {
+    if (c.remote && c.peerId) {
+      return (remote ?? [])
+        .filter(
+          (m) => (m.senderId === myId ? m.recipientId : m.senderId) === c.peerId,
+        )
+        .sort((a, b) => +new Date(a.sentAt) - +new Date(b.sentAt))
+        .map((m) => ({
+          id: m.id,
+          conversationId: c.id,
+          author: m.senderName,
+          body: m.body,
+          at: m.sentAt,
+          mine: m.senderId === myId,
+        }));
+    }
     const local = messages.items
       .filter((m) => m.conversationId === c.id)
       .sort((a, b) => +new Date(a.at) - +new Date(b.at));
@@ -127,6 +204,11 @@ export function InboxBoard({
   };
 
   const isUnread = (c: Conversation) => {
+    if (c.remote && c.peerId) {
+      return (remote ?? []).some(
+        (m) => m.senderId === c.peerId && m.recipientId === myId && !m.readAt,
+      );
+    }
     if (c.local) return false;
     const seed = seedConversations.find((s) => s.id === c.id);
     return Boolean(seed?.unread) && !read.items.some((r) => r.id === c.id);
@@ -140,36 +222,89 @@ export function InboxBoard({
   function open(id: string) {
     setSelected(id);
     setComposer("");
+    const convo = conversations.find((c) => c.id === id);
+    if (convo?.remote && convo.peerId) {
+      const peerId = convo.peerId;
+      markThreadRead(peerId);
+      setRemote((prev) =>
+        (prev ?? []).map((m) =>
+          m.senderId === peerId && m.recipientId === myId && !m.readAt
+            ? { ...m, readAt: new Date().toISOString() }
+            : m,
+        ),
+      );
+      return;
+    }
     if (!read.items.some((r) => r.id === id)) read.add({ id });
   }
 
-  function reply() {
+  async function reply() {
     if (!selected || !composer.trim()) return;
+    const convo = conversations.find((c) => c.id === selected);
+    const body = composer.trim();
+
+    if (convo?.remote && convo.peerId) {
+      const sent = await sendRemoteMessage({
+        recipientId: convo.peerId,
+        recipientName: convo.with,
+        subject: convo.subject,
+        body,
+        senderName: userName,
+      });
+      if (sent) {
+        setRemote((prev) => [...(prev ?? []), sent]);
+        setComposer("");
+      } else {
+        setPubNote("Couldn't send — message not delivered.");
+      }
+      return;
+    }
+
     messages.add({
       id: newId(),
       conversationId: selected,
       author: userName,
-      body: composer.trim(),
+      body,
       at: new Date().toISOString(),
     });
     setComposer("");
   }
 
-  function sendNew() {
+  async function sendNew() {
     if (!draft.to.trim() || !draft.body.trim()) return;
+    const to = draft.to.trim();
+    const subject = draft.subject.trim() || "(no subject)";
+    const body = draft.body.trim();
+    const match = recipients.find(
+      (r) => r.name.toLowerCase() === to.toLowerCase(),
+    );
+
+    if (match?.id && signedIn) {
+      const sent = await sendRemoteMessage({
+        recipientId: match.id,
+        recipientName: match.name,
+        subject,
+        body,
+        senderName: userName,
+      });
+      if (sent) {
+        setRemote((prev) => [...(prev ?? []), sent]);
+        setDraft({ to: "", subject: "", body: "" });
+        setComposeOpen(false);
+        setSelected(`peer-${sent.recipientId}`);
+        return;
+      }
+      setPubNote("Couldn't send — saved on this device instead.");
+    }
+
     const id = newId();
     const now = new Date().toISOString();
-    localConvos.add({
-      id,
-      with: draft.to.trim(),
-      subject: draft.subject.trim() || "(no subject)",
-      at: now,
-    });
+    localConvos.add({ id, with: to, subject, at: now });
     messages.add({
       id: newId(),
       conversationId: id,
       author: userName,
-      body: draft.body.trim(),
+      body,
       at: now,
     });
     setDraft({ to: "", subject: "", body: "" });
@@ -204,9 +339,15 @@ export function InboxBoard({
           </p>
         </div>
 
+        {pubNote && (
+          <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+            {pubNote}
+          </p>
+        )}
+
         <ul className="space-y-3">
           {msgs.map((m) => {
-            const mine = m.author === userName;
+            const mine = m.mine ?? m.author === userName;
             return (
               <li
                 key={m.id}
@@ -274,6 +415,12 @@ export function InboxBoard({
         }
       />
 
+      {pubNote && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {pubNote}
+        </p>
+      )}
+
       {sorted.length === 0 ? (
         <div className="card flex flex-col items-center gap-2 p-10 text-center">
           <InboxIcon className="h-8 w-8 text-ink-faint" />
@@ -317,7 +464,7 @@ export function InboxBoard({
                   <p className="text-sm font-medium text-ink">{c.subject}</p>
                   {last && (
                     <p className="truncate text-sm text-ink-muted">
-                      {last.author === userName ? "You: " : ""}
+                      {(last.mine ?? last.author === userName) ? "You: " : ""}
                       {last.body}
                     </p>
                   )}
@@ -361,7 +508,7 @@ export function InboxBoard({
             />
             <datalist id="moa-recipients">
               {recipients.map((r) => (
-                <option key={r} value={r} />
+                <option key={r.name} value={r.name} />
               ))}
             </datalist>
           </Field>
