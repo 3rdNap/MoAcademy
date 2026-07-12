@@ -1,7 +1,13 @@
 import { GlobalNav } from "./GlobalNav";
 import { TopBar } from "./TopBar";
 import { RoleProvider } from "@/components/role/RoleProvider";
-import { getAuthState, getCourses, getCurrentUser } from "@/lib/data";
+import {
+  getAuthState,
+  getCourses,
+  getCurrentUser,
+  getRecentGrades,
+  getUpcoming,
+} from "@/lib/data";
 
 /**
  * The persistent application chrome: global rail + top bar, with the routed
@@ -9,10 +15,12 @@ import { getAuthState, getCourses, getCurrentUser } from "@/lib/data";
  * app can adapt to the previewed role (student vs. instructor).
  */
 export async function AppShell({ children }: { children: React.ReactNode }) {
-  const [user, courses, auth] = await Promise.all([
+  const [user, courses, auth, upcoming, recentGrades] = await Promise.all([
     getCurrentUser(),
     getCourses(),
     getAuthState(),
+    getUpcoming(),
+    getRecentGrades(),
   ]);
 
   return (
@@ -28,7 +36,13 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       <div className="min-h-full">
         <GlobalNav />
         <div className="md:pl-[84px] print:!pl-0">
-          <TopBar user={user} courses={courses} authed={auth.authed} />
+          <TopBar
+            user={user}
+            courses={courses}
+            authed={auth.authed}
+            upcoming={upcoming}
+            recentGrades={recentGrades}
+          />
           {/* Full-bleed content: no width cap, just a small even gutter on
               both sides so pages fill the screen. */}
           <main

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   ChevronLeft,
@@ -16,6 +16,11 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/form";
 import { useLocalCollection, newId } from "@/lib/local-store";
+import {
+  addRemoteCalendarEvent,
+  fetchMyCalendarEvents,
+  removeRemoteCalendarEvent,
+} from "@/lib/calendar-db";
 import { formatDateTime } from "@/lib/utils";
 import type { CalendarEvent, Course } from "@/lib/types";
 
@@ -50,6 +55,41 @@ export function CalendarBoard({
     [],
   );
 
+  // Signed-in users get personal events from Supabase; null means
+  // signed-out/offline, in which case we keep the browser-local behavior.
+  const [remote, setRemote] = useState<CalendarEvent[] | null>(null);
+  const [pubNote, setPubNote] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchMyCalendarEvents().then((r) => {
+      if (alive) setRemote(r);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // One-time import of a hydrated local calendar into an empty remote one —
+  // guarded so it only ever runs once both sides have resolved.
+  const importedRef = useRef(false);
+  useEffect(() => {
+    if (importedRef.current) return;
+    if (remote === null || remote.length > 0) return;
+    if (!personal.hydrated || personal.items.length === 0) return;
+    importedRef.current = true;
+    (async () => {
+      const created = await Promise.all(
+        personal.items.map((e) =>
+          addRemoteCalendarEvent({ courseId: e.courseId, title: e.title, at: e.at, type: e.type }),
+        ),
+      );
+      const rows = created.filter((r): r is CalendarEvent => r !== null);
+      if (rows.length > 0) setRemote(rows);
+    })();
+  }, [remote, personal.hydrated, personal.items]);
+
+  const personalEvents = remote ?? personal.items;
+
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
 
@@ -76,9 +116,9 @@ export function CalendarBoard({
   const allEvents = useMemo(
     () => [
       ...seedEvents.map((e) => ({ e, local: false })),
-      ...personal.items.map((e) => ({ e, local: true })),
+      ...personalEvents.map((e) => ({ e, local: true })),
     ],
-    [seedEvents, personal.items],
+    [seedEvents, personalEvents],
   );
 
   const grouped = useMemo(() => {
@@ -150,20 +190,54 @@ export function CalendarBoard({
     setOpen(true);
   }
 
-  function save() {
+  async function save() {
     if (!draft.title.trim() || !draft.at) return;
     const at = new Date(draft.at).toISOString();
+    const payload = { title: draft.title.trim(), at, type: draft.type };
+
     if (draft.id) {
-      personal.update(draft.id, { title: draft.title.trim(), at, type: draft.type });
-    } else {
-      personal.add({
-        id: newId(),
-        title: draft.title.trim(),
-        at,
-        type: draft.type,
-      });
+      if (remote !== null) {
+        // No remote update endpoint (migration 0025) — recreate the row.
+        const created = await addRemoteCalendarEvent(payload);
+        if (created) {
+          await removeRemoteCalendarEvent(draft.id);
+          setRemote((prev) =>
+            (prev ?? []).filter((e) => e.id !== draft.id).concat(created),
+          );
+        } else {
+          setPubNote(
+            "Couldn't update the event online — try again in a moment.",
+          );
+        }
+        setOpen(false);
+        return;
+      }
+      personal.update(draft.id, payload);
+      setOpen(false);
+      return;
     }
+
+    if (remote !== null) {
+      const created = await addRemoteCalendarEvent(payload);
+      if (created) {
+        setRemote((prev) => [...(prev ?? []), created]);
+        setOpen(false);
+        return;
+      }
+      setPubNote("Couldn't save online — added on this device instead.");
+    }
+    personal.add({ id: newId(), ...payload });
     setOpen(false);
+  }
+
+  async function removePersonal(id: string) {
+    if (remote !== null) {
+      if (await removeRemoteCalendarEvent(id)) {
+        setRemote((prev) => (prev ?? []).filter((e) => e.id !== id));
+      }
+      return;
+    }
+    personal.remove(id);
   }
 
   return (
@@ -196,6 +270,12 @@ export function CalendarBoard({
           </div>
         }
       />
+
+      {pubNote && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {pubNote}
+        </p>
+      )}
 
       {view === "month" && (
         <div>
@@ -392,7 +472,7 @@ export function CalendarBoard({
                           <Pencil className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => personal.remove(e.id)}
+                          onClick={() => removePersonal(e.id)}
                           className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
                           aria-label="Delete event"
                         >

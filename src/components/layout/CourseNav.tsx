@@ -2,8 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { courseNav } from "@/lib/nav";
+import { courseNav, type CourseNavItem } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+
+// Syllabus sits right after Home, mirroring Canvas. Injected here (rather than
+// in the shared nav list) to keep the change scoped to the course tab bar.
+const navItems: CourseNavItem[] = courseNav.flatMap((item) =>
+  item.segment === ""
+    ? [item, { label: "Syllabus", segment: "syllabus" }]
+    : [item],
+);
 
 /**
  * Canvas-style left course navigation. Highlights the active section based on
@@ -22,7 +30,7 @@ export function CourseNav({
   return (
     <nav aria-label="Course" className="lg:sticky lg:top-20">
       <ul className="flex gap-1 overflow-x-auto border-b border-black/5 pb-2 lg:flex-col lg:gap-0.5 lg:border-b-0 lg:pb-0">
-        {courseNav.map((item) => {
+        {navItems.map((item) => {
           const href = item.segment ? `${base}/${item.segment}` : base;
           const active =
             item.segment === ""

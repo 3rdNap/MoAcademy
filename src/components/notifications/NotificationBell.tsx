@@ -13,7 +13,14 @@ import {
 } from "lucide-react";
 import { useLocalCollection } from "@/lib/local-store";
 import { fetchRecentRemoteAnnouncements } from "@/lib/course-content-db";
-import type { Announcement } from "@/lib/types";
+import { fetchMyMessages, type RemoteMessage } from "@/lib/inbox-db";
+import {
+  fetchRemoteApplications,
+  fetchRemoteScholarships,
+} from "@/lib/roadmap-db";
+import { getSignedInUserId } from "@/lib/study-guides-db";
+import type { Announcement, Assignment } from "@/lib/types";
+import type { RecentGrade } from "@/lib/data";
 import { inboxSeed } from "@/lib/inbox-seed";
 import { seedApplications, seedScholarships } from "@/lib/roadmap/seed";
 import * as seed from "@/lib/data/seed";
@@ -31,7 +38,15 @@ interface Note {
   at: string;
 }
 
-export function NotificationBell({ authed = false }: { authed?: boolean }) {
+export function NotificationBell({
+  authed = false,
+  upcoming,
+  recentGrades,
+}: {
+  authed?: boolean;
+  upcoming?: Assignment[];
+  recentGrades?: RecentGrade[];
+}) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -47,6 +62,20 @@ export function NotificationBell({ authed = false }: { authed?: boolean }) {
     seedScholarships,
   );
 
+  // Signed-in students' roadmap deadlines come from Supabase; anonymous local.
+  const [remoteApps, setRemoteApps] = useState<ApplicationEntry[] | null>(null);
+  const [remoteScholarships, setRemoteScholarships] = useState<
+    Scholarship[] | null
+  >(null);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteApplications().then((r) => alive && setRemoteApps(r));
+    fetchRemoteScholarships().then((r) => alive && setRemoteScholarships(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   useEffect(() => setMounted(true), []);
 
   // Freshly published instructor announcements (shared table, last 7 days).
@@ -58,6 +87,20 @@ export function NotificationBell({ authed = false }: { authed?: boolean }) {
       alive = false;
     };
   }, []);
+
+  // Unread real inbox messages received by the signed-in user.
+  const [unreadMessages, setUnreadMessages] = useState<RemoteMessage[]>([]);
+  useEffect(() => {
+    if (!authed) return;
+    let alive = true;
+    Promise.all([getSignedInUserId(), fetchMyMessages()]).then(([id, msgs]) => {
+      if (!alive || !id || !msgs) return;
+      setUnreadMessages(msgs.filter((m) => m.recipientId === id && !m.readAt));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [authed]);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -85,9 +128,29 @@ export function NotificationBell({ authed = false }: { authed?: boolean }) {
       }
     }
 
+    // Unread real messages (signed-in), newest 5 to avoid flooding the bell.
+    if (authed) {
+      const recent = [...unreadMessages]
+        .sort((a, b) => +new Date(b.sentAt) - +new Date(a.sentAt))
+        .slice(0, 5);
+      for (const m of recent) {
+        list.push({
+          id: `rmsg-${m.id}`,
+          icon: Mail,
+          tone: "bg-sky-50 text-sky-600",
+          title: `New message from ${m.senderName}`,
+          detail: m.subject || `${m.body.slice(0, 80)}${m.body.length > 80 ? "…" : ""}`,
+          href: "/inbox",
+          at: m.sentAt,
+        });
+      }
+    }
+
     // Roadmap deadlines closing within 14 days
+    const appItems = remoteApps ?? apps.items;
+    const scholarshipItems = remoteScholarships ?? scholarships.items;
     const deadlines = [
-      ...apps.items
+      ...appItems
         .filter((a) => a.closesAt)
         .map((a) => ({
           id: `app-${a.id}`,
@@ -95,7 +158,7 @@ export function NotificationBell({ authed = false }: { authed?: boolean }) {
           href: "/roadmap/applications",
           closesAt: a.closesAt!,
         })),
-      ...scholarships.items
+      ...scholarshipItems
         .filter((s) => s.closesAt)
         .map((s) => ({
           id: `sch-${s.id}`,
@@ -119,9 +182,10 @@ export function NotificationBell({ authed = false }: { authed?: boolean }) {
       }
     }
 
-    // Assignments due within 7 days (demo seed only; real deadlines will come
-    // from published assignments once instructors add them).
-    for (const a of authed ? [] : seed.assignments) {
+    // Assignments due within 7 days — real ones when signed in, demo seed
+    // otherwise. getUpcoming() already filters out graded/past-due work but
+    // doesn't cap the window, so keep the 7-day check here.
+    for (const a of authed ? upcoming ?? [] : seed.assignments) {
       const days = daysUntil(a.dueAt);
       if (a.status !== "graded" && days >= 0 && days <= 7) {
         const course = seed.courses.find((c) => c.id === a.courseId);
@@ -151,23 +215,38 @@ export function NotificationBell({ authed = false }: { authed?: boolean }) {
       });
     }
 
-    // Recent grades (demo seed only).
-    for (const ev of authed ? [] : seed.activity) {
-      if (ev.kind === "grade") {
+    // Recent grades — real ones when signed in, demo seed otherwise.
+    if (authed) {
+      for (const g of recentGrades ?? []) {
+        const course = seed.courses.find((c) => c.id === g.courseId);
         list.push({
-          id: `grade-${ev.id}`,
+          id: `grade-${g.id}`,
           icon: GraduationCap,
           tone: "bg-emerald-50 text-emerald-600",
-          title: ev.title,
-          detail: ev.detail,
-          href: ev.courseId ? `/courses/${ev.courseId}/grades` : "/grades",
-          at: ev.at,
+          title: `${g.title} graded`,
+          detail: `${course?.code ? `${course.code} · ` : ""}${g.score}/${g.points}`,
+          href: `/courses/${g.courseId}/grades`,
+          at: g.gradedAt,
         });
+      }
+    } else {
+      for (const ev of seed.activity) {
+        if (ev.kind === "grade") {
+          list.push({
+            id: `grade-${ev.id}`,
+            icon: GraduationCap,
+            tone: "bg-emerald-50 text-emerald-600",
+            title: ev.title,
+            detail: ev.detail,
+            href: ev.courseId ? `/courses/${ev.courseId}/grades` : "/grades",
+            at: ev.at,
+          });
+        }
       }
     }
 
     return list.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-  }, [read.items, apps.items, scholarships.items, published, authed]);
+  }, [read.items, apps.items, scholarships.items, remoteApps, remoteScholarships, published, unreadMessages, authed, upcoming, recentGrades]);
 
   const count = mounted ? notes.length : 0;
 

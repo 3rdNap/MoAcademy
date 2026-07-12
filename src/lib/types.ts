@@ -13,7 +13,9 @@ export interface User {
   initials: string;
 }
 
-export type CourseTerm = "Fall 2026" | "Spring 2026" | "Summer 2026";
+// Was a literal union of known terms; loosened to string because the active
+// term is now admin-settable at runtime (app_settings, migration 0029).
+export type CourseTerm = string;
 
 export interface Course {
   id: string;
@@ -79,6 +81,8 @@ export interface Assignment {
   status: SubmissionStatus;
   score?: number;
   description: string;
+  /** Weighted grading bucket (assignment_groups, migration 0029). */
+  groupId?: string;
 }
 
 export interface Announcement {

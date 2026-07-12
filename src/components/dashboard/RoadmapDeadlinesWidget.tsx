@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Award, Compass, FileText } from "lucide-react";
 import { Widget } from "@/components/ui/Widget";
 import { Badge } from "@/components/ui/Badge";
 import { useLocalCollection } from "@/lib/local-store";
+import {
+  fetchRemoteApplications,
+  fetchRemoteScholarships,
+} from "@/lib/roadmap-db";
 import { seedApplications, seedScholarships } from "@/lib/roadmap/seed";
 import { deadlineState } from "@/lib/roadmap/deadline";
 import { formatDate } from "@/lib/utils";
@@ -30,8 +35,25 @@ export function RoadmapDeadlinesWidget() {
     seedScholarships,
   );
 
+  // Signed-in students' deadlines come from Supabase; anonymous stays local.
+  const [remoteApps, setRemoteApps] = useState<ApplicationEntry[] | null>(null);
+  const [remoteScholarships, setRemoteScholarships] = useState<
+    Scholarship[] | null
+  >(null);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteApplications().then((r) => alive && setRemoteApps(r));
+    fetchRemoteScholarships().then((r) => alive && setRemoteScholarships(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const appItems = remoteApps ?? apps.items;
+  const scholarshipItems = remoteScholarships ?? scholarships.items;
+
   const deadlines: Deadline[] = [
-    ...apps.items
+    ...appItems
       .filter((a) => a.closesAt)
       .map((a) => ({
         id: a.id,
@@ -40,7 +62,7 @@ export function RoadmapDeadlinesWidget() {
         subtitle: a.program ?? "Application",
         closesAt: a.closesAt!,
       })),
-    ...scholarships.items
+    ...scholarshipItems
       .filter((s) => s.closesAt)
       .map((s) => ({
         id: s.id,

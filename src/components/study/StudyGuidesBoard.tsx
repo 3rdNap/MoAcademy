@@ -8,7 +8,6 @@ import {
   Lock,
   Pencil,
   Plus,
-  ShoppingCart,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -23,7 +22,7 @@ import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import { uploadStudyFile } from "@/lib/supabase/storage";
-import { fetchRemoteRegisteredSubjects } from "@/lib/billing/registration-db";
+import { fetchRemoteEnrolledSubjects } from "@/lib/billing/registration-db";
 import {
   addRemoteGuide,
   fetchRemoteGuides,
@@ -84,8 +83,8 @@ export function StudyGuidesBoard() {
     let alive = true;
     fetchRemoteGuides().then((g) => alive && setRemote(g));
     getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
-    // Registrations made on other devices also unlock guides here.
-    fetchRemoteRegisteredSubjects().then(
+    // The subjects the academy has enrolled this student in unlock guides here.
+    fetchRemoteEnrolledSubjects().then(
       (s) => alive && s && setRemoteSubjects(s),
     );
     return () => {
@@ -102,7 +101,7 @@ export function StudyGuidesBoard() {
     [remote, items, seedIds],
   );
 
-  // Which subjects has this student registered for? (from Billing checkouts)
+  // Anonymous/demo fallback: subjects from the browser-local demo store.
   const registrations = useLocalCollection<Registration>(
     "moacademy.billing.registrations",
     [],
@@ -245,8 +244,8 @@ export function StudyGuidesBoard() {
         title="Study Guides"
         subtitle={
           manage
-            ? "Upload study guides and tag each to a subject. Students see the guides for the subjects they've registered."
-            : "Study guides for the subjects you've registered for."
+            ? "Upload study guides and tag each to a subject. Students see the guides for the subjects they're enrolled in."
+            : "Study guides for the subjects you're enrolled in."
         }
         action={
           manage ? (
@@ -266,15 +265,10 @@ export function StudyGuidesBoard() {
           <div>
             <p className="font-semibold text-ink">No study guides yet</p>
             <p className="mt-1 text-sm text-ink-muted">
-              Register subjects in Billing and their study guides will appear
-              here.
+              Subjects are assigned by the academy office. Once you&apos;re
+              enrolled, your subjects&apos; study guides will appear here.
             </p>
           </div>
-          <Link href="/billing">
-            <Button>
-              <ShoppingCart className="h-4 w-4" /> Go to Billing
-            </Button>
-          </Link>
         </div>
       ) : hydrated && grouped.length === 0 ? (
         <div className="card flex flex-col items-center gap-3 p-12 text-center">
@@ -284,7 +278,7 @@ export function StudyGuidesBoard() {
           <p className="text-sm text-ink-muted">
             {manage
               ? "No study guides yet — add your first one."
-              : "No study guides for your registered subjects yet."}
+              : "No study guides for your enrolled subjects yet."}
           </p>
         </div>
       ) : (

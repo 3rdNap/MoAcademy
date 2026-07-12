@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CalendarClock,
   ExternalLink,
@@ -16,6 +16,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { useLocalCollection, newId } from "@/lib/roadmap/store";
+import {
+  addRemoteApplication,
+  fetchRemoteApplications,
+  removeRemoteApplication,
+  updateRemoteApplication,
+} from "@/lib/roadmap-db";
 import { seedApplications } from "@/lib/roadmap/seed";
 import { deadlineState } from "@/lib/roadmap/deadline";
 import { formatDate } from "@/lib/utils";
@@ -48,11 +54,48 @@ export function ApplicationsBoard() {
     "moacademy.roadmap.applications",
     seedApplications,
   );
+
+  // Signed-in students sync applications to Supabase; anonymous stays local.
+  const [remote, setRemote] = useState<ApplicationEntry[] | null>(null);
+  const [pubNote, setPubNote] = useState<string | null>(null);
+  const importedRef = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    fetchRemoteApplications().then((r) => alive && setRemote(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // One-time import: a fresh remote account inherits what's on this device.
+  useEffect(() => {
+    if (importedRef.current) return;
+    if (remote === null || remote.length > 0 || !hydrated) return;
+    // Never import the bundled demo seed, which useLocalCollection
+    // persists even for untouched visitors.
+    const seedIds = new Set(seedApplications.map((s) => s.id));
+    const own = items.filter((i) => !seedIds.has(i.id));
+    if (own.length === 0) return;
+    importedRef.current = true;
+    (async () => {
+      const created: ApplicationEntry[] = [];
+      for (const a of own) {
+        const { id, ...input } = a;
+        void id;
+        const row = await addRemoteApplication(input);
+        if (row) created.push(row);
+      }
+      setRemote(created);
+    })();
+  }, [remote, hydrated, items]);
+
+  const applications = remote ?? items;
+
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [uploadNote, setUploadNote] = useState("");
 
-  const sorted = [...items].sort((a, b) => {
+  const sorted = [...applications].sort((a, b) => {
     const av = a.closesAt ? +new Date(a.closesAt) : Infinity;
     const bv = b.closesAt ? +new Date(b.closesAt) : Infinity;
     return av - bv;
@@ -70,16 +113,77 @@ export function ApplicationsBoard() {
     setOpen(true);
   }
 
+  function draftToInput(d: Draft): Omit<ApplicationEntry, "id"> {
+    return {
+      institution: d.institution!.trim(),
+      program: d.program,
+      opensAt: d.opensAt,
+      closesAt: d.closesAt,
+      applyUrl: d.applyUrl,
+      prospectusUrl: d.prospectusUrl,
+      prospectusFileName: d.prospectusFileName,
+      prospectusData: d.prospectusData,
+      status: d.status ?? "not_started",
+      notes: d.notes,
+    };
+  }
+
+  async function handleAdd(input: Omit<ApplicationEntry, "id">) {
+    if (remote !== null) {
+      const temp: ApplicationEntry = { ...input, id: newId() };
+      setRemote((prev) => [temp, ...(prev ?? [])]);
+      const created = await addRemoteApplication(input);
+      if (created) {
+        setRemote((prev) =>
+          (prev ?? []).map((a) => (a.id === temp.id ? created : a)),
+        );
+      } else {
+        setRemote((prev) => (prev ?? []).filter((a) => a.id !== temp.id));
+        setPubNote("Couldn't save to your account — please try again.");
+      }
+      return;
+    }
+    add({ ...input, id: newId() });
+  }
+
+  async function handleUpdate(id: string, input: Omit<ApplicationEntry, "id">) {
+    if (remote !== null) {
+      const snapshot = remote;
+      setRemote((prev) =>
+        (prev ?? []).map((a) => (a.id === id ? { ...input, id } : a)),
+      );
+      const saved = await updateRemoteApplication(id, input);
+      if (saved) {
+        setRemote((prev) => (prev ?? []).map((a) => (a.id === id ? saved : a)));
+      } else {
+        setRemote(snapshot);
+        setPubNote("Couldn't save your change — please try again.");
+      }
+      return;
+    }
+    update(id, input);
+  }
+
+  async function handleRemove(id: string) {
+    if (remote !== null) {
+      const snapshot = remote;
+      setRemote((prev) => (prev ?? []).filter((a) => a.id !== id));
+      if (!(await removeRemoteApplication(id))) {
+        setRemote(snapshot);
+        setPubNote("Couldn't remove that — please try again.");
+      }
+      return;
+    }
+    remove(id);
+  }
+
   function save() {
     if (!draft.institution?.trim()) return;
+    const input = draftToInput(draft);
     if (draft.id) {
-      update(draft.id, draft);
+      void handleUpdate(draft.id, input);
     } else {
-      add({
-        ...(draft as ApplicationEntry),
-        id: newId(),
-        status: draft.status ?? "not_started",
-      });
+      void handleAdd(input);
     }
     setOpen(false);
   }
@@ -116,7 +220,13 @@ export function ApplicationsBoard() {
         </Button>
       </div>
 
-      {hydrated && items.length === 0 ? (
+      {pubNote && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {pubNote}
+        </p>
+      )}
+
+      {hydrated && applications.length === 0 ? (
         <EmptyState onAdd={openCreate} />
       ) : (
         <div className="space-y-3">
@@ -174,7 +284,7 @@ export function ApplicationsBoard() {
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => remove(a.id)}
+                      onClick={() => handleRemove(a.id)}
                       className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
                       aria-label="Delete"
                     >

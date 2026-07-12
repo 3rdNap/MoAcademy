@@ -5,6 +5,8 @@
 // null/false so callers can fall back to the browser-local copy.
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getClientTerm } from "@/lib/term";
+import { subjects } from "./subjects";
 import type { PaymentMethod, Registration } from "./registration";
 
 interface ItemRow {
@@ -151,4 +153,33 @@ export async function fetchRemoteRegisteredSubjects(): Promise<string[] | null> 
         .flatMap((r) => r.items.map((i) => i.name)),
     ),
   ];
+}
+
+/**
+ * Subject names the signed-in student is enrolled in this term, from the
+ * institution's admin-issued `subject_enrollments` (own-rows RLS, keyed by
+ * subject *code* — mapped back to display names via the catalogue). Null on
+ * any error / missing backend so callers fall back to the local demo store.
+ */
+export async function fetchRemoteEnrolledSubjects(): Promise<string[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const term = await getClientTerm();
+    const { data, error } = await supabase
+      .from("subject_enrollments")
+      .select("subject_code")
+      .eq("user_id", user.id)
+      .eq("role", "student")
+      .eq("term", term);
+    if (error || !data) return null;
+    const codes = new Set(data.map((r) => r.subject_code as string));
+    return subjects.filter((s) => codes.has(s.code)).map((s) => s.name);
+  } catch {
+    return null;
+  }
 }

@@ -45,6 +45,26 @@ export const getAuthState = cache(
   },
 );
 
+/**
+ * The institution's active term — read from app_settings (migration 0029, key
+ * 'current_term'), which an admin can advance via the console. Falls back to
+ * CURRENT_TERM on any error/absence (offline, unmigrated, or unset).
+ */
+export const getCurrentTerm = cache(async (): Promise<string> => {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return CURRENT_TERM;
+  try {
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "current_term")
+      .maybeSingle();
+    return (data?.value as string) ?? CURRENT_TERM;
+  } catch {
+    return CURRENT_TERM;
+  }
+});
+
 export interface AdminPerson {
   id: string;
   name: string;
@@ -145,8 +165,272 @@ export const getAdminOverview = cache(async (): Promise<AdminOverview | null> =>
   }
 });
 
+export interface GuardianChild {
+  id: string;
+  name: string;
+  email: string;
+  avatarColor: string;
+}
+
+/**
+ * The students a signed-in parent/guardian is linked to (migration 0017). RLS
+ * limits this to their own children; returns [] for anyone else, so the family
+ * view falls back to the demo.
+ */
+export const getGuardianChildren = cache(async (): Promise<GuardianChild[]> => {
+  const { authed, userId, role } = await getAuthState();
+  if (!authed || role !== "parent" || !userId) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data: links } = await supabase
+      .from("guardian_links")
+      .select("student_id")
+      .eq("guardian_id", userId);
+    const ids = (links ?? []).map((l) => l.student_id as string);
+    if (ids.length === 0) return [];
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, avatar_color")
+      .in("id", ids);
+    return (profs ?? []).map((p) => ({
+      id: p.id as string,
+      name: (p.full_name as string) ?? "",
+      email: (p.email as string) ?? "",
+      avatarColor: (p.avatar_color as string) ?? "#0284c7",
+    }));
+  } catch {
+    return [];
+  }
+});
+
+/**
+ * A linked child's courses — the subjects they've paid to register for, mapped
+ * the same way as the student's own dashboard. RLS (migration 0017) only lets a
+ * guardian read registrations belonging to their linked students.
+ */
+export async function getChildCourses(childId: string): Promise<Course[]> {
+  const { authed, role } = await getAuthState();
+  if (!authed || role !== "parent") return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const term = await getCurrentTerm();
+    // Institutional enrolments first (admin-issued), then legacy paid regs.
+    try {
+      const { data: enr } = await supabase
+        .from("subject_enrollments")
+        .select("subject_code")
+        .eq("user_id", childId)
+        .eq("role", "student")
+        .eq("term", term);
+      const enrolled = new Set((enr ?? []).map((r) => r.subject_code as string));
+      if (enrolled.size > 0) {
+        const chosen = subjects.filter((s) => enrolled.has(s.code));
+        const names = await instructorNamesFor(
+          chosen.map((s) => s.code),
+          supabase,
+          term,
+        );
+        return chosen.map((s) => subjectToCourse(s, names.get(s.code), term));
+      }
+    } catch {
+      /* subject_enrollments not migrated yet */
+    }
+    const { data: regs } = await supabase
+      .from("registrations")
+      .select("status, registration_items(code)")
+      .eq("user_id", childId)
+      .eq("status", "paid");
+    const codes = new Set<string>();
+    for (const r of (regs ?? []) as { registration_items?: { code: string }[] }[]) {
+      for (const it of r.registration_items ?? []) codes.add(it.code);
+    }
+    const chosen = subjects.filter((s) => codes.has(s.code));
+    const names = await instructorNamesFor(chosen.map((s) => s.code), supabase, term);
+    return chosen.map((s) => subjectToCourse(s, names.get(s.code), term));
+  } catch {
+    return [];
+  }
+}
+
+export interface RosterMember {
+  id: string;
+  name: string;
+  email: string;
+  avatarColor: string;
+}
+
+/** The real enrolled students for a course (subject), for a signed-in
+ *  teaching account (or null if not applicable/offline — callers fall back
+ *  to the bundled demo roster). */
+export async function getCourseRoster(
+  courseId: string,
+): Promise<RosterMember[] | null> {
+  const code = subjects.find((s) => s.id === courseId)?.code;
+  if (!code) return null;
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return null;
+  const term = await getCurrentTerm();
+
+  let ids: string[];
+  try {
+    const { data, error } = await supabase
+      .from("subject_enrollments")
+      .select("user_id")
+      .eq("subject_code", code)
+      .eq("role", "student")
+      .eq("term", term);
+    // An RLS-empty result for a non-teacher surfaces as [] here, which is a
+    // real "no roster to show" state and falls back below; a query error is a
+    // genuine "can't determine a roster" and returns null.
+    if (error) return null;
+    ids = (data ?? []).map((r) => r.user_id as string);
+  } catch {
+    return null;
+  }
+  if (ids.length === 0) return [];
+
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, avatar_color")
+      .in("id", ids);
+    return (data ?? []).map((p) => ({
+      id: p.id as string,
+      name: (p.full_name as string) ?? "",
+      email: (p.email as string) ?? "",
+      avatarColor: (p.avatar_color as string) ?? "#0284c7",
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export interface MessageContact {
+  id: string;
+  name: string;
+}
+
+/**
+ * Who the signed-in user may message: admins can reach everyone; everyone
+ * else sees their real course-mates (anyone sharing a subject+term
+ * enrolment) — mirrors the RLS in migration 0021. Null when signed
+ * out/offline, so the inbox falls back to the demo roster.
+ */
+export const getMessageContacts = cache(
+  async (): Promise<MessageContact[] | null> => {
+    const { authed, userId, role } = await getAuthState();
+    if (!authed || !userId) return null;
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) return null;
+    try {
+      if (role === "admin") {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .neq("id", userId);
+        if (error) return null;
+        return (data ?? [])
+          .map((p) => ({
+            id: p.id as string,
+            name: (p.full_name as string) ?? "",
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      const term = await getCurrentTerm();
+      const { data: mine, error: mineError } = await supabase
+        .from("subject_enrollments")
+        .select("subject_code")
+        .eq("user_id", userId)
+        .eq("term", term);
+      if (mineError) return null;
+      const codes = Array.from(
+        new Set((mine ?? []).map((r) => r.subject_code as string)),
+      );
+      if (codes.length === 0) return [];
+
+      const { data: mates, error: matesError } = await supabase
+        .from("subject_enrollments")
+        .select("user_id")
+        .in("subject_code", codes)
+        .eq("term", term);
+      if (matesError) return null;
+      const ids = Array.from(
+        new Set(
+          (mates ?? [])
+            .map((r) => r.user_id as string)
+            .filter((id) => id !== userId),
+        ),
+      );
+      if (ids.length === 0) return [];
+
+      const { data: profs, error: profError } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", ids);
+      if (profError) return null;
+      return (profs ?? [])
+        .map((p) => ({
+          id: p.id as string,
+          name: (p.full_name as string) ?? "",
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      return null;
+    }
+  },
+);
+
+/** Published assignments across a set of course ids (course_key), soonest first. */
+export async function getAssignmentsForCourses(
+  courseIds: string[],
+): Promise<Assignment[]> {
+  if (courseIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("assignments")
+      .select("*")
+      .in("course_key", courseIds)
+      .order("due_at");
+    return (data ?? []).length
+      ? (data as unknown as RawAssignment[]).map(mapAssignment)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Published announcements across a set of course ids (course_key), newest first. */
+export async function getAnnouncementsForCourses(
+  courseIds: string[],
+): Promise<Announcement[]> {
+  if (courseIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("announcements")
+      .select("*")
+      .in("course_key", courseIds)
+      .order("posted_at", { ascending: false });
+    return (data ?? []).length
+      ? (data as unknown as RawAnnouncement[]).map(mapAnnouncement)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 /** A registered subject becomes the student's course. */
-function subjectToCourse(s: Subject): Course {
+function subjectToCourse(
+  s: Subject,
+  instructorName = "To be assigned",
+  term: string = CURRENT_TERM,
+): Course {
   let h = 0;
   for (let i = 0; i < s.id.length; i++) h = s.id.charCodeAt(i) + ((h << 5) - h);
   return {
@@ -154,14 +438,64 @@ function subjectToCourse(s: Subject): Course {
     code: s.code,
     name: s.name,
     shortName: s.name,
-    term: CURRENT_TERM,
+    term,
     description: `${s.name} · ${s.category}`,
     color: `hsl(${Math.abs(h) % 360} 62% 45%)`,
-    instructor: "To be assigned",
+    instructor: instructorName,
     credits: 1,
     published: true,
     progress: 0,
   };
+}
+
+type SupabaseClient = NonNullable<
+  Awaited<ReturnType<typeof createSupabaseServerClient>>
+>;
+
+/**
+ * Real instructor display names for the given subject codes, keyed by code.
+ * Resolves `subject_enrollments` teaching rows → `profiles.full_name` under
+ * existing RLS (course-mates and admins can read both). Degrades to an empty
+ * map on any error or when RLS returns nothing (e.g. guardians), leaving
+ * callers with the "To be assigned" default.
+ */
+async function instructorNamesFor(
+  codes: string[],
+  supabase: SupabaseClient,
+  term: string = CURRENT_TERM,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (codes.length === 0) return map;
+  try {
+    const { data: teach } = await supabase
+      .from("subject_enrollments")
+      .select("subject_code, user_id")
+      .eq("role", "instructor")
+      .eq("term", term)
+      .in("subject_code", codes);
+    const rows = (teach ?? []) as { subject_code: string; user_id: string }[];
+    const ids = Array.from(new Set(rows.map((r) => r.user_id)));
+    if (ids.length === 0) return map;
+
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", ids);
+    const names = new Map<string, string>();
+    for (const p of (profs ?? []) as { id: string; full_name: string | null }[]) {
+      if (p.full_name) names.set(p.id, p.full_name);
+    }
+
+    for (const r of rows) {
+      const name = names.get(r.user_id);
+      if (!name) continue;
+      const existing = map.get(r.subject_code);
+      map.set(r.subject_code, existing ? `${existing}, ${name}` : name);
+    }
+  } catch {
+    /* RLS/offline — leave names unresolved */
+  }
+  return map;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +568,7 @@ interface RawAssignment {
   due_at: string;
   available_at: string | null;
   points: number;
+  group_id?: string | null;
 }
 function mapAssignment(r: RawAssignment): Assignment {
   return {
@@ -246,6 +581,7 @@ function mapAssignment(r: RawAssignment): Assignment {
     dueAt: r.due_at,
     availableAt: r.available_at ?? undefined,
     points: r.points,
+    groupId: r.group_id ?? undefined,
     status: "not_started",
   };
 }
@@ -339,8 +675,7 @@ export const getCourses = cache(async (): Promise<Course[]> => {
       }
 
       // Signed-in user with no real courses yet: derive from their world
-      // instead of showing the demo. A student's courses are the subjects
-      // they've paid to register for; teaching roles see the full catalog.
+      // instead of showing the demo.
       if (user) {
         const { data: profile } = await supabase
           .from("profiles")
@@ -348,9 +683,40 @@ export const getCourses = cache(async (): Promise<Course[]> => {
           .eq("id", user.id)
           .maybeSingle();
         const role = (profile?.role as Role) ?? "student";
-        if (role === "instructor" || role === "admin") {
-          return subjects.map(subjectToCourse);
+        const term = await getCurrentTerm();
+        const toCourses = async (chosen: Subject[]): Promise<Course[]> => {
+          const names = await instructorNamesFor(
+            chosen.map((s) => s.code),
+            supabase,
+            term,
+          );
+          return chosen.map((s) => subjectToCourse(s, names.get(s.code), term));
+        };
+
+        if (role === "admin") return toCourses(subjects);
+
+        // Institutional model: courses are the subjects an admin has enrolled
+        // this person into (as student, or as instructor if they teach it).
+        const enrolRole = role === "instructor" ? "instructor" : "student";
+        try {
+          const { data: enr } = await supabase
+            .from("subject_enrollments")
+            .select("subject_code")
+            .eq("user_id", user.id)
+            .eq("role", enrolRole)
+            .eq("term", term);
+          const enrolled = new Set((enr ?? []).map((r) => r.subject_code as string));
+          if (enrolled.size > 0) {
+            return toCourses(subjects.filter((s) => enrolled.has(s.code)));
+          }
+        } catch {
+          /* subject_enrollments not migrated yet — fall through */
         }
+
+        // Instructors with no explicit teaching assignment see the catalogue.
+        if (role === "instructor") return toCourses(subjects);
+
+        // Legacy fallback: subjects a student previously paid to register for.
         const { data: regs } = await supabase
           .from("registrations")
           .select("status, registration_items(code)")
@@ -360,7 +726,7 @@ export const getCourses = cache(async (): Promise<Course[]> => {
         for (const r of (regs ?? []) as { registration_items?: { code: string }[] }[]) {
           for (const it of r.registration_items ?? []) codes.add(it.code);
         }
-        return subjects.filter((s) => codes.has(s.code)).map(subjectToCourse);
+        return toCourses(subjects.filter((s) => codes.has(s.code)));
       }
     } catch {
       /* fall through to demo */
@@ -373,6 +739,31 @@ export const getCourses = cache(async (): Promise<Course[]> => {
 export async function getCourse(id: string): Promise<Course | undefined> {
   const all = await getCourses();
   return all.find((c) => c.id === id);
+}
+
+/** The shared, instructor-editable syllabus for a course (migration 0028).
+ *  Null when unset/offline/error, so the board falls back to its empty state
+ *  or the anonymous demo's local copy. */
+export async function getSyllabus(
+  courseId: string,
+): Promise<{ body: string; updatedBy: string; updatedAt: string } | null> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return null;
+  try {
+    const { data } = await supabase
+      .from("course_syllabus")
+      .select("body, updated_by, updated_at")
+      .eq("course_key", courseId)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      body: (data.body as string) ?? "",
+      updatedBy: (data.updated_by as string) ?? "",
+      updatedAt: (data.updated_at as string) ?? "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 export const getModules = cache(async (courseId: string): Promise<CourseModule[]> => {
@@ -496,14 +887,65 @@ export const getAnnouncements = cache(async (
   return seedRows;
 });
 
+/** The signed-in user's real activity feed: recent announcements on their
+ *  courses plus their own recently graded work, newest first. Falls back to
+ *  the bundled demo for anonymous visitors, and to [] on any error. */
 export async function getActivity(): Promise<ActivityEvent[]> {
   const { authed } = await getAuthState();
-  return authed ? [] : seed.activity;
+  if (!authed) return seed.activity;
+  try {
+    const courses = await getCourses();
+    const courseIds = courses.map((c) => c.id);
+    const [announcements, grades] = await Promise.all([
+      getAnnouncementsForCourses(courseIds),
+      getRecentGrades(),
+    ]);
+
+    const since = Date.now() - 14 * 86400000;
+    const events: ActivityEvent[] = [];
+
+    for (const a of announcements) {
+      if (new Date(a.postedAt).getTime() < since) continue;
+      events.push({
+        id: `ann_${a.id}`,
+        kind: "announcement",
+        courseId: a.courseId,
+        title: a.title,
+        detail: `${a.author} posted an announcement.`,
+        at: a.postedAt,
+      });
+    }
+
+    for (const g of grades) {
+      events.push({
+        id: `grade_${g.id}`,
+        kind: "grade",
+        courseId: g.courseId,
+        title: `${g.title} graded`,
+        detail: `You scored ${g.score}/${g.points}.`,
+        at: g.gradedAt,
+      });
+    }
+
+    return events
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 12);
+  } catch {
+    return [];
+  }
 }
 
 export async function getCalendar(): Promise<CalendarEvent[]> {
   const { authed } = await getAuthState();
-  return authed ? [] : seed.calendar;
+  if (!authed) return seed.calendar;
+  const assignments = await getAssignments();
+  return assignments.map((a) => ({
+    id: a.id,
+    courseId: a.courseId,
+    title: a.title,
+    at: a.dueAt,
+    type: a.type === "discussion" ? "event" : a.type,
+  }));
 }
 
 /** Assignments due in the future, soonest first. */
@@ -513,4 +955,111 @@ export async function getUpcoming(now = new Date()): Promise<Assignment[]> {
     .filter((a) => new Date(a.dueAt).getTime() >= now.getTime() - 86400000)
     .filter((a) => a.status !== "graded")
     .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+}
+
+export interface RecentGrade {
+  id: string; // assignment id
+  courseId: string;
+  title: string;
+  score: number;
+  points: number;
+  gradedAt: string;
+}
+
+interface RawGradedSubmission {
+  assignment_id: string;
+  score: number | null;
+  graded_at: string | null;
+  assignments: {
+    title: string;
+    course_key: string | null;
+    course_id?: string | null;
+    points: number;
+  } | null;
+}
+
+/** The signed-in user's own graded work in the last `days` days, newest first. */
+export async function getRecentGrades(days = 14): Promise<RecentGrade[]> {
+  const { authed, userId } = await getAuthState();
+  if (!authed || !userId) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const { data } = await supabase
+      .from("submissions")
+      .select(
+        "assignment_id, score, graded_at, assignments(title, course_key, course_id, points)",
+      )
+      .eq("user_id", userId)
+      .not("graded_at", "is", null)
+      .gte("graded_at", since)
+      .order("graded_at", { ascending: false });
+    const rows = (data ?? []) as unknown as RawGradedSubmission[];
+    const grades: RecentGrade[] = [];
+    for (const r of rows) {
+      if (r.score == null || !r.graded_at || !r.assignments) continue;
+      grades.push({
+        id: r.assignment_id,
+        courseId: r.assignments.course_key ?? r.assignments.course_id ?? "",
+        title: r.assignments.title,
+        score: r.score,
+        points: r.assignments.points,
+        gradedAt: r.graded_at,
+      });
+    }
+    return grades;
+  } catch {
+    return [];
+  }
+}
+
+export interface ChildCourseGrade {
+  courseId: string;
+  graded: number; // count of graded items
+  earned: number; // points earned
+  possible: number; // points possible across graded items
+}
+
+interface RawChildSubmission {
+  score: number | null;
+  assignments: {
+    course_key: string | null;
+    course_id?: string | null;
+    points: number;
+  } | null;
+}
+
+/** Per-course grade rollup for a linked child (guardian RLS, migration 0017). */
+export async function getChildGrades(childId: string): Promise<ChildCourseGrade[]> {
+  const { authed, role } = await getAuthState();
+  if (!authed || role !== "parent") return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("submissions")
+      .select("score, assignments(course_key, course_id, points)")
+      .eq("user_id", childId)
+      .not("score", "is", null);
+    const rows = (data ?? []) as unknown as RawChildSubmission[];
+    const byCourse = new Map<string, ChildCourseGrade>();
+    for (const r of rows) {
+      if (r.score == null || !r.assignments) continue;
+      const courseId = r.assignments.course_key ?? r.assignments.course_id ?? "";
+      const existing = byCourse.get(courseId) ?? {
+        courseId,
+        graded: 0,
+        earned: 0,
+        possible: 0,
+      };
+      existing.graded += 1;
+      existing.earned += r.score;
+      existing.possible += r.assignments.points;
+      byCourse.set(courseId, existing);
+    }
+    return Array.from(byCourse.values());
+  } catch {
+    return [];
+  }
 }

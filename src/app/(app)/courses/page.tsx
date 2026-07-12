@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { BookOpen, ShoppingCart } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CourseCard } from "@/components/dashboard/CourseCard";
 import { getAuthState, getCourses } from "@/lib/data";
@@ -19,18 +18,8 @@ export default async function CoursesPage() {
         title="Courses"
         subtitle={
           auth.authed
-            ? "The subjects you're registered for this term."
+            ? "The subjects you're enrolled in this term."
             : "All courses you're enrolled in or teaching."
-        }
-        action={
-          auth.authed && auth.role === "student" ? (
-            <Link
-              href="/billing"
-              className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
-            >
-              <ShoppingCart className="h-4 w-4" /> Register subjects
-            </Link>
-          ) : undefined
         }
       />
 
@@ -43,16 +32,10 @@ export default async function CoursesPage() {
           <div>
             <p className="font-semibold text-ink">No courses yet</p>
             <p className="mt-1 text-sm text-ink-muted">
-              Register for subjects in Billing and they&apos;ll appear here as
-              your courses.
+              Subjects are assigned by the academy office. Once you&apos;re
+              enrolled, they&apos;ll appear here as your courses.
             </p>
           </div>
-          <Link
-            href="/billing"
-            className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-          >
-            <ShoppingCart className="h-4 w-4" /> Go to Billing
-          </Link>
         </div>
       ) : (
         Object.entries(byTerm).map(([term, list]) => (

@@ -1,12 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, CheckCircle2, RotateCcw, Trophy, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
 import { useLocalCollection, newId } from "@/lib/local-store";
+import {
+  addRemotePracticeResult,
+  fetchMyPracticeHistory,
+  type RemotePracticeResult,
+} from "@/lib/practice-db";
 import { seedGuides, type StudyGuide } from "@/lib/study-guides";
 import type { Registration } from "@/lib/billing/registration";
 import type { QuizQuestion } from "@/app/api/quiz/route";
@@ -33,6 +38,52 @@ export function PracticeQuiz() {
   const [score, setScore] = useState(0);
 
   const history = useLocalCollection<QuizResult>("moacademy.practice.history", []);
+
+  // Signed-in users get their practice history from Supabase; null means
+  // signed-out/offline, in which case we keep the browser-local history.
+  const [remote, setRemote] = useState<RemotePracticeResult[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchMyPracticeHistory().then((r) => {
+      if (alive) setRemote(r);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // One-time import of a hydrated local history into an empty remote one —
+  // guarded so it only ever runs once both sides have resolved.
+  const importedRef = useRef(false);
+  useEffect(() => {
+    if (importedRef.current) return;
+    if (remote === null || remote.length > 0) return;
+    if (!history.hydrated || history.items.length === 0) return;
+    importedRef.current = true;
+    (async () => {
+      const created = await Promise.all(
+        history.items.map((r) =>
+          addRemotePracticeResult({ topic: r.topic, score: r.score, total: r.total }),
+        ),
+      );
+      const rows = created.filter((r): r is RemotePracticeResult => r !== null);
+      if (rows.length > 0) setRemote(rows);
+    })();
+  }, [remote, history.hydrated, history.items]);
+
+  const historyItems: QuizResult[] = useMemo(
+    () =>
+      remote !== null
+        ? remote.map((r) => ({
+            id: r.id,
+            topic: r.topic,
+            score: r.score,
+            total: r.total,
+            createdAt: r.createdAt,
+          }))
+        : history.items,
+    [remote, history.items],
+  );
 
   // Topic suggestions from the student's own world: registered subjects and
   // the guides available to them.
@@ -84,18 +135,25 @@ export function PracticeQuiz() {
     if (i === questions[index].answer) setScore((s) => s + 1);
   }
 
+  async function recordResult() {
+    const result = { topic, score, total: questions.length };
+    if (remote !== null) {
+      const created = await addRemotePracticeResult(result);
+      if (created) {
+        setRemote((prev) => [created, ...(prev ?? [])]);
+        return;
+      }
+      // Refused/offline — don't lose the result, keep it on this device.
+    }
+    history.add({ id: newId(), ...result, createdAt: new Date().toISOString() });
+  }
+
   function next() {
     if (index + 1 < questions.length) {
       setIndex(index + 1);
       setSelected(null);
     } else {
-      history.add({
-        id: newId(),
-        topic,
-        score,
-        total: questions.length,
-        createdAt: new Date().toISOString(),
-      });
+      recordResult();
       setStage("done");
     }
   }
@@ -181,13 +239,15 @@ export function PracticeQuiz() {
             )}
           </div>
 
-          {history.hydrated && history.items.length > 0 && (
+          {(remote !== null
+            ? historyItems.length > 0
+            : history.hydrated && historyItems.length > 0) && (
             <div className="card p-6">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-faint">
                 Recent quizzes
               </h2>
               <ul className="mt-3 divide-y divide-black/5">
-                {history.items.slice(0, 6).map((r) => {
+                {historyItems.slice(0, 6).map((r) => {
                   const p = Math.round((r.score / r.total) * 100);
                   return (
                     <li key={r.id} className="flex items-center justify-between py-2">

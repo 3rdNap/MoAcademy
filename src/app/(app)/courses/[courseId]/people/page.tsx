@@ -4,8 +4,7 @@ import { MessageSquare } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
-import { getCourse } from "@/lib/data";
-import { currentUser } from "@/lib/data/seed";
+import { getCourse, getCourseRoster, getCurrentUser } from "@/lib/data";
 import { roster } from "@/lib/roster";
 import { initialsOf } from "@/lib/utils";
 
@@ -17,13 +16,30 @@ export default async function PeoplePage({
   params: Promise<{ courseId: string }>;
 }) {
   const { courseId } = await params;
-  const course = await getCourse(courseId);
+  const [course, realRoster, user] = await Promise.all([
+    getCourse(courseId),
+    getCourseRoster(courseId),
+    getCurrentUser(),
+  ]);
   if (!course) notFound();
 
+  const students =
+    realRoster !== null
+      ? realRoster.map((s) => ({
+          name: s.name,
+          role: "Student" as const,
+          color: s.avatarColor,
+        }))
+      : roster.map((s) => ({
+          name: s.name,
+          role: "Student" as const,
+          color: "#8b94a3",
+        }));
+
   const people = [
-    { name: course.instructor, role: "Instructor" as const },
-    { name: currentUser.name, role: "You" as const },
-    ...roster.map((s) => ({ name: s.name, role: "Student" as const })),
+    { name: course.instructor, role: "Instructor" as const, color: course.color },
+    { name: user.name, role: "You" as const, color: "#10b6a3" },
+    ...students,
   ];
 
   return (
@@ -36,16 +52,7 @@ export default async function PeoplePage({
       <div className="card divide-y divide-black/5">
         {people.map((p) => (
           <div key={p.name} className="flex items-center gap-3 p-3.5">
-            <Avatar
-              initials={initialsOf(p.name)}
-              color={
-                p.role === "Instructor"
-                  ? course.color
-                  : p.role === "You"
-                    ? "#10b6a3"
-                    : "#8b94a3"
-              }
-            />
+            <Avatar initials={initialsOf(p.name)} color={p.color} />
             <div className="flex-1">
               <p className="text-sm font-medium text-ink">{p.name}</p>
             </div>

@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   Compass,
-  CreditCard,
   FileText,
   GraduationCap,
   Home,
@@ -38,7 +37,6 @@ const pages: Entry[] = [
   { id: "p-calendar", kind: "Page", title: "Calendar", subtitle: "Agenda", href: "/calendar", icon: CalendarClock },
   { id: "p-inbox", kind: "Page", title: "Inbox", subtitle: "Messages", href: "/inbox", icon: Inbox },
   { id: "p-grades", kind: "Page", title: "Grades", subtitle: "Term standing", href: "/grades", icon: GraduationCap },
-  { id: "p-billing", kind: "Page", title: "Billing", subtitle: "Registration", href: "/billing", icon: CreditCard },
   { id: "p-guides", kind: "Page", title: "Study Guides", subtitle: "PDF guide library", href: "/study-guides", icon: Library },
   { id: "p-assistant", kind: "Page", title: "Assistant", subtitle: "Ask Mo, your AI tutor", href: "/assistant", icon: Sparkles },
   { id: "p-practice", kind: "Page", title: "Practice", subtitle: "Mo-made quizzes with instant marking", href: "/practice", icon: ListChecks },

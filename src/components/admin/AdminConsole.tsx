@@ -15,6 +15,10 @@ import {
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
+import { AddPersonButton } from "@/components/admin/AddPersonButton";
+import { ManageSubjectsButton } from "@/components/admin/ManageSubjectsButton";
+import { ResetPasswordButton } from "@/components/admin/ResetPasswordButton";
+import { TermControl } from "@/components/admin/TermControl";
 import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin, roleLabel } from "@/lib/role";
 import { roster } from "@/lib/roster";
@@ -28,12 +32,15 @@ export function AdminConsole({
   assignments,
   overview,
   currentUserId,
+  currentTerm,
 }: {
   courses: Course[];
   assignments: Assignment[];
   /** Real institution data for a signed-in admin; null falls back to demo. */
   overview: AdminOverview | null;
   currentUserId?: string;
+  /** The institution's active term (app_settings, migration 0029). */
+  currentTerm: string;
 }) {
   const { role, hydrated } = useRole();
   const router = useRouter();
@@ -115,6 +122,7 @@ export function AdminConsole({
             ? "Live institution overview."
             : "Demo overview — sign in as an admin to see real data."
         }
+        action={<TermControl currentTerm={currentTerm} />}
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -180,10 +188,13 @@ export function AdminConsole({
 
         {/* People */}
         <section>
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
-            People
-            {overview && <Badge tone="neutral">{overview.people.length}</Badge>}
-          </h2>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
+              People
+              {overview && <Badge tone="neutral">{overview.people.length}</Badge>}
+            </h2>
+            <AddPersonButton enabled={roleMgmt} />
+          </div>
           {overview && overview.people.length > 5 && (
             <div className="relative mb-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
@@ -206,6 +217,7 @@ export function AdminConsole({
                       key={p.id}
                       person={p}
                       editable={roleMgmt && p.id !== currentUserId}
+                      manageEnrollment={roleMgmt}
                       onChangeRole={(next) => changeRole(p.id, next)}
                     />
                   ))
@@ -375,10 +387,12 @@ function Person({ name, role }: { name: string; role: "Instructor" | "Student" }
 function RealPerson({
   person,
   editable,
+  manageEnrollment,
   onChangeRole,
 }: {
   person: AdminOverview["people"][number];
   editable: boolean;
+  manageEnrollment: boolean;
   onChangeRole: (next: string) => Promise<string | null>;
 }) {
   const tone =
@@ -399,6 +413,8 @@ function RealPerson({
     setBusy(false);
   }
 
+  const canEnroll = person.role === "student" || person.role === "instructor";
+
   return (
     <div className="flex items-center gap-3 p-3">
       <Avatar
@@ -412,6 +428,21 @@ function RealPerson({
         </p>
         <p className="truncate text-xs text-ink-faint">{person.email}</p>
         {error && <p className="text-xs text-rose-600">{error}</p>}
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {canEnroll && (
+            <ManageSubjectsButton
+              userId={person.id}
+              name={person.name || person.email}
+              role={person.role as "student" | "instructor"}
+              enabled={manageEnrollment}
+            />
+          )}
+          <ResetPasswordButton
+            userId={person.id}
+            name={person.name || person.email}
+            enabled={manageEnrollment}
+          />
+        </div>
       </div>
       {editable ? (
         <select

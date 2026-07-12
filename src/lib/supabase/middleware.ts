@@ -34,7 +34,28 @@ export async function updateSession(request: NextRequest) {
   });
 
   // Touch the session so expired tokens get refreshed via Set-Cookie.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Institution-issued accounts start with a temporary password. Until the
+  // user sets their own, funnel every page to the set-password screen. APIs,
+  // the auth routes and the set-password page itself are exempt to avoid a
+  // redirect loop and to let sign-out / the update call through.
+  if (user?.user_metadata?.must_change_password === true) {
+    const { pathname } = request.nextUrl;
+    const exempt =
+      pathname.startsWith("/api") ||
+      pathname.startsWith("/login") ||
+      pathname.startsWith("/logout") ||
+      pathname.startsWith("/account/set-password");
+    if (!exempt) {
+      const target = request.nextUrl.clone();
+      target.pathname = "/account/set-password";
+      target.search = "";
+      return NextResponse.redirect(target);
+    }
+  }
 
   return response;
 }

@@ -1,19 +1,104 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, MessageSquareText, Paperclip } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { Field, Input, Textarea } from "@/components/ui/form";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection } from "@/lib/local-store";
-import { roster } from "@/lib/roster";
-import { formatDate, initialsOf, letterGrade } from "@/lib/utils";
+import {
+  fetchAssignmentGroups,
+  type AssignmentGroup,
+} from "@/lib/course-content-db";
+import { roster as fakeRoster } from "@/lib/roster";
+import {
+  fetchCourseRoster,
+  fetchCourseSubmissions,
+  fetchMySubmissions,
+  getSubmissionFileUrl,
+  upsertGrade,
+  type RemoteSubmission,
+  type RosterStudent,
+} from "@/lib/gradebook-db";
+import { formatDate, initialsOf, letterGrade, relativeTime } from "@/lib/utils";
 import type { Assignment, Course } from "@/lib/types";
 
 interface GradeCell {
   id: string; // `${studentId}__${assignmentId}`
   score: number;
+}
+
+/**
+ * Canvas-style weighted total, implemented once for the student pill,
+ * instructor totals, and CSV so on-screen and exported figures always agree.
+ *
+ * `earnedOf` returns a graded item's earned score, or null/undefined when the
+ * item isn't graded. Groups with weight > 0 and ≥1 graded item participate; a
+ * group's percent renormalizes against the sum of participating weights, so an
+ * ungraded group is excluded rather than counted as zero. Ungrouped graded
+ * work (no group, or a group deleted out from under it) forms an implicit
+ * bucket weighted by whatever the defined weights leave under 100. With no
+ * weighted groups (or an offline fetch) this is plain points math.
+ */
+function computeTotal(
+  assignments: Assignment[],
+  earnedOf: (a: Assignment) => number | null | undefined,
+  groups: AssignmentGroup[] | null,
+): number | null {
+  const graded = assignments.filter((a) => earnedOf(a) != null);
+  const hasWeighted = groups != null && groups.some((g) => g.weight > 0);
+  if (!hasWeighted) {
+    const earned = graded.reduce((n, a) => n + (earnedOf(a) ?? 0), 0);
+    const possible = graded.reduce((n, a) => n + a.points, 0);
+    return possible ? Math.round((earned / possible) * 100) : null;
+  }
+
+  const byId = new Map(groups!.map((g) => [g.id, g]));
+  const bucketPct = (items: Assignment[]): number | null => {
+    const possible = items.reduce((n, a) => n + a.points, 0);
+    if (!possible) return null;
+    const earned = items.reduce((n, a) => n + (earnedOf(a) ?? 0), 0);
+    return earned / possible;
+  };
+
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (const g of groups!) {
+    if (g.weight <= 0) continue;
+    const pct = bucketPct(graded.filter((a) => a.groupId === g.id));
+    if (pct == null) continue;
+    weightedSum += g.weight * pct;
+    weightTotal += g.weight;
+  }
+
+  const definedWeight = groups!.reduce((n, g) => n + g.weight, 0);
+  const implicitWeight = Math.max(0, 100 - definedWeight);
+  if (implicitWeight > 0) {
+    const pct = bucketPct(
+      graded.filter((a) => !a.groupId || !byId.has(a.groupId)),
+    );
+    if (pct != null) {
+      weightedSum += implicitWeight * pct;
+      weightTotal += implicitWeight;
+    }
+  }
+
+  if (weightTotal === 0) return null;
+  return Math.round((weightedSum / weightTotal) * 100);
+}
+
+/** "Weighted: Homework 40% · Exams 60%" — or null when no weighted groups. */
+function weightScheme(groups: AssignmentGroup[] | null): string | null {
+  const active = (groups ?? []).filter((g) => g.weight > 0);
+  if (active.length === 0) return null;
+  return (
+    "Weighted: " + active.map((g) => `${g.name} ${g.weight}%`).join(" · ")
+  );
 }
 
 export function CourseGradesBoard({
@@ -39,10 +124,29 @@ export function CourseGradesBoard({
     [seed, authored.items],
   );
 
+  // Weighted grading buckets, fetched once here and passed to both views.
+  // Null = offline/none → plain points math downstream.
+  const [groups, setGroups] = useState<AssignmentGroup[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchAssignmentGroups(course.id).then((g) => alive && setGroups(g));
+    return () => {
+      alive = false;
+    };
+  }, [course.id]);
+
   if (!teaching) {
-    return <StudentGrades course={course} assignments={assignments} />;
+    return (
+      <StudentGrades course={course} assignments={assignments} groups={groups} />
+    );
   }
-  return <InstructorGradebook course={course} assignments={assignments} />;
+  return (
+    <InstructorGradebook
+      course={course}
+      assignments={assignments}
+      groups={groups}
+    />
+  );
 }
 
 /* ----------------------------- Student view ----------------------------- */
@@ -50,16 +154,42 @@ export function CourseGradesBoard({
 function StudentGrades({
   course,
   assignments,
+  groups,
 }: {
   course: Course;
   assignments: Assignment[];
+  groups: AssignmentGroup[] | null;
 }) {
-  const graded = assignments.filter(
-    (a) => a.status === "graded" && a.score != null,
-  );
-  const earned = graded.reduce((n, a) => n + (a.score ?? 0), 0);
+  // Real submissions override the seed/local status+score where present; ids
+  // that aren't real assignment rows just won't match anything.
+  const [mySubs, setMySubs] = useState<Record<string, RemoteSubmission>>({});
+  useEffect(() => {
+    let alive = true;
+    fetchMySubmissions(assignments.map((a) => a.id)).then((subs) => {
+      if (!alive || !subs) return;
+      setMySubs(Object.fromEntries(subs.map((s) => [s.assignmentId, s])));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [assignments]);
+
+  function effective(a: Assignment) {
+    const sub = mySubs[a.id];
+    if (!sub) return { status: a.status, score: a.score };
+    return { status: sub.status, score: sub.score ?? undefined };
+  }
+
+  // A graded item's earned score (null otherwise) drives the weighted total.
+  const earnedOf = (a: Assignment) => {
+    const e = effective(a);
+    return e.status === "graded" && e.score != null ? e.score : null;
+  };
+  const graded = assignments.filter((a) => earnedOf(a) != null);
+  const earned = graded.reduce((n, a) => n + (earnedOf(a) ?? 0), 0);
   const possible = graded.reduce((n, a) => n + a.points, 0);
-  const pct = possible ? Math.round((earned / possible) * 100) : 0;
+  const pct = computeTotal(assignments, earnedOf, groups) ?? 0;
+  const scheme = weightScheme(groups);
 
   return (
     <>
@@ -67,16 +197,21 @@ function StudentGrades({
         title="Grades"
         subtitle={`Based on ${graded.length} graded items in ${course.code}.`}
         action={
-          <div
-            className="rounded-xl px-4 py-2 text-right text-white shadow-card"
-            style={{ backgroundColor: course.color }}
-          >
-            <p className="text-2xl font-bold leading-none">
-              {pct}% · {letterGrade(pct)}
-            </p>
-            <p className="text-xs text-white/85">
-              {earned}/{possible} points
-            </p>
+          <div className="text-right">
+            <div
+              className="rounded-xl px-4 py-2 text-white shadow-card"
+              style={{ backgroundColor: course.color }}
+            >
+              <p className="text-2xl font-bold leading-none">
+                {pct}% · {letterGrade(pct)}
+              </p>
+              <p className="text-xs text-white/85">
+                {earned}/{possible} points
+              </p>
+            </div>
+            {scheme && (
+              <p className="mt-1 text-xs text-ink-faint">{scheme}</p>
+            )}
           </div>
         }
       />
@@ -92,24 +227,42 @@ function StudentGrades({
             </tr>
           </thead>
           <tbody className="divide-y divide-black/5">
-            {assignments.map((a) => (
-              <tr key={a.id} className="hover:bg-surface-subtle">
-                <td className="px-4 py-3 font-medium text-ink">{a.title}</td>
-                <td className="px-4 py-3 text-ink-muted">{formatDate(a.dueAt)}</td>
-                <td className="px-4 py-3">
-                  {a.status === "graded" ? (
-                    <Badge tone="success">Graded</Badge>
-                  ) : a.status === "missing" ? (
-                    <Badge tone="danger">Missing</Badge>
-                  ) : (
-                    <Badge tone="neutral">Pending</Badge>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right font-medium text-ink">
-                  {a.score != null ? `${a.score}/${a.points}` : `—/${a.points}`}
-                </td>
-              </tr>
-            ))}
+            {assignments.map((a) => {
+              const e = effective(a);
+              const feedback = mySubs[a.id]?.feedback;
+              return (
+                <tr key={a.id} className="hover:bg-surface-subtle">
+                  <td className="px-4 py-3 align-top font-medium text-ink">
+                    {a.title}
+                    {feedback && (
+                      <p className="mt-1 whitespace-pre-wrap text-xs font-normal text-ink-muted">
+                        <span className="font-semibold text-ink-faint">
+                          Instructor feedback:
+                        </span>{" "}
+                        {feedback}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 align-top text-ink-muted">
+                    {formatDate(a.dueAt)}
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    {e.status === "graded" ? (
+                      <Badge tone="success">Graded</Badge>
+                    ) : e.status === "late" ? (
+                      <Badge tone="warning">Late</Badge>
+                    ) : e.status === "missing" ? (
+                      <Badge tone="danger">Missing</Badge>
+                    ) : (
+                      <Badge tone="neutral">Pending</Badge>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right align-top font-medium text-ink">
+                    {e.score != null ? `${e.score}/${a.points}` : `—/${a.points}`}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -122,20 +275,91 @@ function StudentGrades({
 function InstructorGradebook({
   course,
   assignments,
+  groups,
 }: {
   course: Course;
   assignments: Assignment[];
+  groups: AssignmentGroup[] | null;
 }) {
   const grades = useLocalCollection<GradeCell>(
     `moacademy.gradebook.${course.id}`,
     [],
   );
 
-  const cellId = (sid: string, aid: string) => `${sid}__${aid}`;
-  const getScore = (sid: string, aid: string) =>
-    grades.items.find((g) => g.id === cellId(sid, aid))?.score;
+  // The real enrolled class + their real submissions, for a signed-in teaching
+  // account. Falls back to the fake demo roster/local grades when null/empty
+  // (offline, anonymous, or not a teaching account for this course).
+  const [realRoster, setRealRoster] = useState<RosterStudent[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchCourseRoster(course.id).then((r) => alive && setRealRoster(r));
+    return () => {
+      alive = false;
+    };
+  }, [course.id]);
 
-  function setScore(sid: string, aid: string, raw: string, points: number) {
+  const realMode = Boolean(realRoster && realRoster.length > 0);
+  const activeRoster: { id: string; name: string }[] = realMode
+    ? realRoster!
+    : fakeRoster;
+
+  const cellId = (sid: string, aid: string) => `${sid}__${aid}`;
+
+  const [realSubs, setRealSubs] = useState<Record<string, RemoteSubmission>>(
+    {},
+  );
+  useEffect(() => {
+    if (!realMode) return;
+    let alive = true;
+    fetchCourseSubmissions(assignments.map((a) => a.id)).then((subs) => {
+      if (!alive || !subs) return;
+      setRealSubs(
+        Object.fromEntries(
+          subs.map((s) => [cellId(s.userId, s.assignmentId), s]),
+        ),
+      );
+    });
+    return () => {
+      alive = false;
+    };
+  }, [realMode, assignments]);
+
+  function placeholderSub(
+    sid: string,
+    aid: string,
+    score: number | null,
+    feedback: string | undefined,
+  ): RemoteSubmission {
+    return {
+      assignmentId: aid,
+      userId: sid,
+      status: score != null ? "graded" : "missing",
+      score,
+      body: "",
+      feedback,
+    };
+  }
+
+  const getScore = (sid: string, aid: string): number | undefined =>
+    realMode
+      ? realSubs[cellId(sid, aid)]?.score ?? undefined
+      : grades.items.find((g) => g.id === cellId(sid, aid))?.score;
+
+  async function setScore(sid: string, aid: string, raw: string, points: number) {
+    if (realMode) {
+      const score = raw === "" ? null : Math.max(0, Math.min(points, Number(raw)));
+      if (score !== null && Number.isNaN(score)) return;
+      const id = cellId(sid, aid);
+      const existing = realSubs[id];
+      setRealSubs((prev) => ({
+        ...prev,
+        [id]: existing
+          ? { ...existing, score, status: score != null ? "graded" : existing.status }
+          : placeholderSub(sid, aid, score, undefined),
+      }));
+      await upsertGrade(aid, sid, { score, feedback: existing?.feedback });
+      return;
+    }
     const id = cellId(sid, aid);
     const existing = grades.items.find((g) => g.id === id);
     if (raw === "") {
@@ -148,21 +372,65 @@ function InstructorGradebook({
     else grades.add({ id, score });
   }
 
-  function studentPct(sid: string) {
-    let earned = 0;
-    let possible = 0;
-    for (const a of assignments) {
-      const s = getScore(sid, a.id);
-      if (s != null) {
-        earned += s;
-        possible += a.points;
-      }
-    }
-    return possible ? Math.round((earned / possible) * 100) : null;
+  const [reviewCell, setReviewCell] = useState<{ sid: string; aid: string } | null>(
+    null,
+  );
+  const [reviewScore, setReviewScore] = useState("");
+  const [reviewFeedback, setReviewFeedback] = useState("");
+
+  /** Fetch a short-lived signed URL for a submission attachment and open it. */
+  async function openAttachment(path: string) {
+    const url = await getSubmissionFileUrl(path);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  function openReview(sid: string, aid: string) {
+    const sub = realSubs[cellId(sid, aid)];
+    setReviewCell({ sid, aid });
+    setReviewScore(sub?.score != null ? String(sub.score) : "");
+    setReviewFeedback(sub?.feedback ?? "");
+  }
+
+  const reviewAssignment = reviewCell
+    ? assignments.find((a) => a.id === reviewCell.aid)
+    : undefined;
+  const reviewStudent = reviewCell
+    ? activeRoster.find((s) => s.id === reviewCell.sid)
+    : undefined;
+  const reviewSub = reviewCell ? realSubs[cellId(reviewCell.sid, reviewCell.aid)] : undefined;
+
+  async function saveReview() {
+    if (!reviewCell) return;
+    const { sid, aid } = reviewCell;
+    const points = reviewAssignment?.points ?? Infinity;
+    const score =
+      reviewScore === "" ? null : Math.max(0, Math.min(points, Number(reviewScore)));
+    if (score !== null && Number.isNaN(score)) return;
+    const feedback = reviewFeedback.trim();
+    const id = cellId(sid, aid);
+    setRealSubs((prev) => {
+      const existing = prev[id];
+      return {
+        ...prev,
+        [id]: existing
+          ? { ...existing, score, feedback: feedback || undefined }
+          : placeholderSub(sid, aid, score, feedback || undefined),
+      };
+    });
+    await upsertGrade(aid, sid, { score, feedback });
+    setReviewCell(null);
+  }
+
+  // Weighted (or plain, when no groups) total for one student — shared by the
+  // on-screen total column and the CSV export so they never diverge.
+  function studentPct(sid: string) {
+    return computeTotal(assignments, (a) => getScore(sid, a.id), groups);
+  }
+
+  const scheme = weightScheme(groups);
+
   function assignmentAvg(aid: string, points: number) {
-    const scores = roster
+    const scores = activeRoster
       .map((s) => getScore(s.id, aid))
       .filter((v): v is number => v != null);
     if (scores.length === 0) return null;
@@ -170,12 +438,59 @@ function InstructorGradebook({
     return Math.round((avg / points) * 100);
   }
 
+  /** Build a CSV of the current gradebook and trigger a browser download. */
+  function exportCsv() {
+    if (!realRoster) return;
+    const esc = (v: string | number) => {
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = [
+      "Student",
+      "Email",
+      ...assignments.map((a) => `${a.title} (/${a.points})`),
+      "Total %",
+      "Letter",
+    ];
+    const rows = realRoster.map((s) => {
+      const pct = studentPct(s.id);
+      return [
+        s.name,
+        s.email,
+        ...assignments.map((a) => getScore(s.id, a.id) ?? ""),
+        pct ?? "",
+        pct != null ? letterGrade(pct) : "",
+      ];
+    });
+    const csv = [header, ...rows]
+      .map((row) => row.map(esc).join(","))
+      .join("\r\n");
+    const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${course.code}-grades.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <PageHeader
         title="Gradebook"
-        subtitle={`${roster.length} students · ${assignments.length} assignments in ${course.code}. Enter scores — they save automatically.`}
+        subtitle={`${activeRoster.length} students · ${assignments.length} assignments in ${course.code}. Enter scores — they save automatically.`}
+        action={
+          realMode ? (
+            <Button variant="outline" onClick={exportCsv}>
+              <Download className="h-4 w-4" /> Export CSV
+            </Button>
+          ) : undefined
+        }
       />
+
+      {scheme && <p className="mb-4 text-xs text-ink-faint">{scheme}</p>}
 
       <div className="card overflow-x-auto">
         <table className="w-full border-collapse text-sm">
@@ -198,7 +513,7 @@ function InstructorGradebook({
             </tr>
           </thead>
           <tbody className="divide-y divide-black/5">
-            {roster.map((s) => {
+            {activeRoster.map((s) => {
               const pct = studentPct(s.id);
               return (
                 <tr key={s.id} className="hover:bg-surface-subtle">
@@ -214,22 +529,46 @@ function InstructorGradebook({
                       </span>
                     </span>
                   </td>
-                  {assignments.map((a) => (
-                    <td key={a.id} className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        max={a.points}
-                        value={getScore(s.id, a.id) ?? ""}
-                        onChange={(e) =>
-                          setScore(s.id, a.id, e.target.value, a.points)
-                        }
-                        placeholder="—"
-                        className="focus-ring h-9 w-16 rounded-lg border border-black/10 bg-surface px-2 text-center text-sm text-ink placeholder:text-ink-faint"
-                        aria-label={`${s.name} — ${a.title}`}
-                      />
-                    </td>
-                  ))}
+                  {assignments.map((a) => {
+                    const isLate =
+                      realMode && realSubs[cellId(s.id, a.id)]?.status === "late";
+                    return (
+                      <td key={a.id} className="px-3 py-2">
+                        <div className="flex items-center gap-1">
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min={0}
+                              max={a.points}
+                              value={getScore(s.id, a.id) ?? ""}
+                              onChange={(e) =>
+                                setScore(s.id, a.id, e.target.value, a.points)
+                              }
+                              placeholder="—"
+                              className="focus-ring h-9 w-16 rounded-lg border border-black/10 bg-surface px-2 text-center text-sm text-ink placeholder:text-ink-faint"
+                              aria-label={`${s.name} — ${a.title}`}
+                            />
+                            {isLate && (
+                              <span
+                                className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-surface bg-amber-500"
+                                title="Submitted late"
+                              />
+                            )}
+                          </div>
+                          {realMode && (
+                            <button
+                              type="button"
+                              onClick={() => openReview(s.id, a.id)}
+                              className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-surface-sunken hover:text-ink"
+                              aria-label={`Review ${s.name} — ${a.title}`}
+                            >
+                              <MessageSquareText className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })}
                   <td className="px-4 py-2 text-right">
                     {pct != null ? (
                       <span className="font-semibold text-ink">
@@ -266,10 +605,87 @@ function InstructorGradebook({
       </div>
 
       <p className="mt-3 text-xs text-ink-faint">
-        Scores are capped at each assignment&apos;s points and saved in your
-        browser. Switch to the Student view (top bar) to see the learner&apos;s
-        own grade page.
+        {realMode
+          ? "Scores are capped at each assignment's points and saved to each student's real gradebook."
+          : "Scores are capped at each assignment's points and saved in your browser."}{" "}
+        Switch to the Student view (top bar) to see the learner&apos;s own grade
+        page.
       </p>
+
+      <Modal
+        open={reviewCell !== null}
+        onClose={() => setReviewCell(null)}
+        title={`${reviewStudent?.name ?? "Student"} · ${reviewAssignment?.title ?? ""}`}
+        description={
+          reviewSub?.submittedAt
+            ? `Submitted ${relativeTime(reviewSub.submittedAt)}${
+                reviewSub.status === "late" ? " · Late" : ""
+              }`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setReviewCell(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveReview}>Save</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {reviewSub?.body ? (
+            <div className="rounded-lg border border-black/10 bg-surface-subtle p-3 text-sm text-ink">
+              <p className="whitespace-pre-wrap">{reviewSub.body}</p>
+              {reviewSub.fileName && (
+                <p className="mt-2 flex items-center gap-1 text-xs text-ink-faint">
+                  <Paperclip className="h-3 w-3" />
+                  {reviewSub.filePath ? (
+                    <button
+                      type="button"
+                      onClick={() => openAttachment(reviewSub.filePath!)}
+                      className="focus-ring underline underline-offset-2 hover:text-ink"
+                    >
+                      {reviewSub.fileName}
+                    </button>
+                  ) : (
+                    reviewSub.fileName
+                  )}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-black/15 p-3 text-sm text-ink-faint">
+              (No submission yet)
+            </p>
+          )}
+          <Field label={`Score (out of ${reviewAssignment?.points ?? 0})`}>
+            <Input
+              type="number"
+              min={0}
+              max={reviewAssignment?.points}
+              value={reviewScore}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") {
+                  setReviewScore("");
+                  return;
+                }
+                const points = reviewAssignment?.points ?? Infinity;
+                const capped = Math.max(0, Math.min(points, Number(raw)));
+                setReviewScore(Number.isNaN(capped) ? raw : String(capped));
+              }}
+              placeholder="—"
+            />
+          </Field>
+          <Field label="Feedback">
+            <Textarea
+              value={reviewFeedback}
+              onChange={(e) => setReviewFeedback(e.target.value)}
+              placeholder="Leave feedback for the student…"
+            />
+          </Field>
+        </div>
+      </Modal>
     </>
   );
 }
