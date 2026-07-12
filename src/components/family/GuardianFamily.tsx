@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   BookOpen,
   CalendarClock,
+  FileText,
   Megaphone,
   UserRound,
 } from "lucide-react";
@@ -165,6 +167,13 @@ export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) 
                   Overall {overallPct}% · {letterGrade(overallPct)}
                 </Badge>
               )}
+              <Link
+                href={`/family/report/${child.id}`}
+                className="focus-ring flex items-center gap-1.5 rounded-lg border border-black/10 bg-surface px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-subtle dark:border-white/10"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Report card
+              </Link>
             </div>
           </div>
           {courses.length === 0 ? (
