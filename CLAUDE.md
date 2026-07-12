@@ -99,7 +99,11 @@ The app runs as an institution, not a self-service signup:
 - **Guardians** (`parent` role, migration 0017) are created student-driven at
   signup/creation and linked via `guardian_links`; `/family` shows the linked
   child's enrolled courses and grade rollups.
-- All migrations through **0027** are applied to the live Supabase project
+- **The active term is admin-managed** (app_settings key `current_term`,
+  migration 0029; console "Term:" control) — `CURRENT_TERM` is only the
+  fallback. Weighted assignment groups (0029) drive gradebook totals when
+  an instructor gives groups weight; plain points math otherwise.
+- All migrations through **0029** are applied to the live Supabase project
   (incl. the private `submissions` storage bucket — signed-URL reads for the
   owner or the assignment's teaching accounts). Admin console can reset a
   forgotten password (`/api/admin/reset-password`, service-role); the new
