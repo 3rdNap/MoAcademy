@@ -123,6 +123,7 @@ interface AssignmentRow {
   due_at: string;
   available_at: string | null;
   points: number;
+  group_id: string | null;
 }
 
 function mapAssignmentRow(r: AssignmentRow): Assignment {
@@ -135,6 +136,7 @@ function mapAssignmentRow(r: AssignmentRow): Assignment {
     dueAt: r.due_at,
     availableAt: r.available_at ?? undefined,
     points: r.points,
+    groupId: r.group_id ?? undefined,
     status: "not_started",
   };
 }
@@ -145,6 +147,7 @@ export interface AssignmentInput {
   description: string;
   dueAt: string;
   points: number;
+  groupId?: string;
 }
 
 function toAssignmentRow(input: AssignmentInput) {
@@ -154,6 +157,7 @@ function toAssignmentRow(input: AssignmentInput) {
     description: input.description,
     due_at: input.dueAt,
     points: input.points,
+    group_id: input.groupId ?? null,
   };
 }
 
@@ -222,6 +226,113 @@ export async function removeRemoteAssignment(id: string): Promise<boolean> {
   if (!supabase) return false;
   try {
     const { error } = await supabase.from("assignments").delete().eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/* --------------------------- assignment groups -------------------------- */
+
+interface AssignmentGroupRow {
+  id: string;
+  course_key: string;
+  name: string;
+  weight: number;
+  position: number;
+}
+
+export interface AssignmentGroup {
+  id: string;
+  courseKey: string;
+  name: string;
+  weight: number;
+  position: number;
+}
+
+function mapGroupRow(r: AssignmentGroupRow): AssignmentGroup {
+  return {
+    id: r.id,
+    courseKey: r.course_key,
+    name: r.name,
+    weight: r.weight,
+    position: r.position,
+  };
+}
+
+/** Weighted grading buckets for a course, ordered — or null when offline. */
+export async function fetchAssignmentGroups(
+  courseKey: string,
+): Promise<AssignmentGroup[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("assignment_groups")
+      .select("*")
+      .eq("course_key", courseKey)
+      .order("position");
+    if (error || !data) return null;
+    return (data as unknown as AssignmentGroupRow[]).map(mapGroupRow);
+  } catch {
+    return null;
+  }
+}
+
+/** Create a group. Null when refused (not a teaching account). */
+export async function addAssignmentGroup(
+  courseKey: string,
+  input: { name: string; weight: number; position: number },
+): Promise<AssignmentGroup | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("assignment_groups")
+      .insert({
+        course_key: courseKey,
+        name: input.name,
+        weight: input.weight,
+        position: input.position,
+      })
+      .select()
+      .single();
+    if (error || !data) return null;
+    return mapGroupRow(data as unknown as AssignmentGroupRow);
+  } catch {
+    return null;
+  }
+}
+
+export async function updateAssignmentGroup(
+  id: string,
+  patch: { name?: string; weight?: number; position?: number },
+): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from("assignment_groups")
+      .update(patch)
+      .eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function removeAssignmentGroup(id: string): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from("assignment_groups")
+      .delete()
+      .eq("id", id);
     return !error;
   } catch {
     return false;

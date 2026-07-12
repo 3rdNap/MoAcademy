@@ -12,10 +12,15 @@ import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import {
+  addAssignmentGroup,
   addRemoteAssignment,
+  fetchAssignmentGroups,
   fetchRemoteAssignments,
+  removeAssignmentGroup,
   removeRemoteAssignment,
+  updateAssignmentGroup,
   updateRemoteAssignment,
+  type AssignmentGroup,
 } from "@/lib/course-content-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
 import {
@@ -57,6 +62,7 @@ type Draft = {
   dueAt: string; // yyyy-mm-dd
   points: number;
   description: string;
+  groupId: string; // "" = no group
 };
 
 const emptyDraft: Draft = {
@@ -65,6 +71,7 @@ const emptyDraft: Draft = {
   dueAt: "",
   points: 100,
   description: "",
+  groupId: "",
 };
 
 export function CourseAssignmentsBoard({
@@ -103,14 +110,69 @@ export function CourseAssignmentsBoard({
   // visible to every student on every device.
   const [remote, setRemote] = useState<Assignment[] | null>(null);
   const [signedIn, setSignedIn] = useState(false);
+  // Weighted grading buckets (assignment_groups). Empty when offline/none.
+  const [groups, setGroups] = useState<AssignmentGroup[]>([]);
   useEffect(() => {
     let alive = true;
     fetchRemoteAssignments(course.id).then((r) => alive && setRemote(r));
+    fetchAssignmentGroups(course.id).then((g) => alive && g && setGroups(g));
     getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
     return () => {
       alive = false;
     };
   }, [course.id]);
+
+  const groupName = (id?: string) =>
+    id ? groups.find((g) => g.id === id)?.name : undefined;
+
+  // Manage-groups modal (teaching accounts, real signed-in mode only).
+  const [manageOpen, setManageOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupWeight, setNewGroupWeight] = useState(0);
+  const weightSum = groups.reduce((n, g) => n + g.weight, 0);
+
+  async function addGroup() {
+    const name = newGroupName.trim();
+    if (!name) return;
+    const created = await addAssignmentGroup(course.id, {
+      name,
+      weight: Math.max(0, Math.min(100, newGroupWeight)),
+      position: groups.length,
+    });
+    if (created) {
+      setGroups((prev) => [...prev, created]);
+      setNewGroupName("");
+      setNewGroupWeight(0);
+    } else {
+      setPubNote(
+        "Couldn't create the group (teaching account required).",
+      );
+    }
+  }
+
+  // Persist an edited field; optimistic state already updated by the caller.
+  async function persistGroup(
+    id: string,
+    patch: { name?: string; weight?: number },
+  ) {
+    if (!(await updateAssignmentGroup(id, patch))) {
+      setPubNote("Couldn't save the group change (teaching account required).");
+    }
+  }
+
+  async function deleteGroup(id: string) {
+    if (await removeAssignmentGroup(id)) {
+      setGroups((prev) => prev.filter((g) => g.id !== id));
+      // DB clears assignments.group_id (ON DELETE SET NULL) — mirror locally.
+      setRemote((prev) =>
+        (prev ?? []).map((a) =>
+          a.groupId === id ? { ...a, groupId: undefined } : a,
+        ),
+      );
+    } else {
+      setPubNote("Couldn't delete the group (teaching account required).");
+    }
+  }
 
   // My real submissions to shared assignments — reaches the instructor.
   const [mySubs, setMySubs] = useState<Record<string, RemoteSubmission>>({});
@@ -275,6 +337,7 @@ export function CourseAssignmentsBoard({
       dueAt: a.dueAt ? a.dueAt.slice(0, 10) : "",
       points: a.points,
       description: a.description,
+      groupId: a.groupId ?? "",
     });
     setOpen(true);
   }
@@ -290,6 +353,7 @@ export function CourseAssignmentsBoard({
       dueAt,
       points: draft.points,
       description: draft.description,
+      groupId: draft.groupId || undefined,
     };
 
     // Publish to the shared table when signed in; a refused write (not a
@@ -349,9 +413,16 @@ export function CourseAssignmentsBoard({
         subtitle={`${rows.length} assignments · ${totalPoints} points total`}
         action={
           teaching ? (
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4" /> Assignment
-            </Button>
+            <div className="flex items-center gap-2">
+              {signedIn && remote !== null && (
+                <Button variant="outline" onClick={() => setManageOpen(true)}>
+                  Manage groups
+                </Button>
+              )}
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4" /> Assignment
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -383,6 +454,9 @@ export function CourseAssignmentsBoard({
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium text-ink">{a.title}</h3>
                   <Badge tone={badge.tone}>{badge.label}</Badge>
+                  {groupName(a.groupId) && (
+                    <Badge tone="neutral">{groupName(a.groupId)}</Badge>
+                  )}
                   {source === "local" && <Badge tone="brand">Added by you</Badge>}
                   {source === "remote" && <Badge tone="success">Published</Badge>}
                 </div>
@@ -520,6 +594,21 @@ export function CourseAssignmentsBoard({
               onChange={(e) => setDraft({ ...draft, dueAt: e.target.value })}
             />
           </Field>
+          {groups.length > 0 && (
+            <Field label="Group">
+              <Select
+                value={draft.groupId}
+                onChange={(e) => setDraft({ ...draft, groupId: e.target.value })}
+              >
+                <option value="">No group</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           <div>
             <div className="mb-1 flex items-center justify-between">
               <span className="block text-xs font-medium uppercase tracking-wide text-ink-faint">
@@ -609,6 +698,110 @@ export function CourseAssignmentsBoard({
             {submitFor && remote?.some((a) => a.id === submitFor.id) && signedIn
               ? "This goes to your instructor and updates the status to “Submitted”."
               : "Demo submission — your work is saved in this browser and the status updates to “Submitted”."}
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        title="Assignment groups"
+        description="Weight each group so grades count proportionally (Canvas-style)."
+        footer={
+          <Button onClick={() => setManageOpen(false)}>Done</Button>
+        }
+      >
+        <div className="space-y-4">
+          {groups.length === 0 && (
+            <p className="text-sm text-ink-faint">
+              No groups yet — add one below to start weighting grades.
+            </p>
+          )}
+          {groups.map((g) => (
+            <div key={g.id} className="flex items-end gap-2">
+              <Field label="Name" className="flex-1">
+                <Input
+                  value={g.name}
+                  onChange={(e) =>
+                    setGroups((prev) =>
+                      prev.map((x) =>
+                        x.id === g.id ? { ...x, name: e.target.value } : x,
+                      ),
+                    )
+                  }
+                  onBlur={() => persistGroup(g.id, { name: g.name.trim() })}
+                />
+              </Field>
+              <Field label="Weight %" className="w-24">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={g.weight}
+                  onChange={(e) => {
+                    const weight = Math.max(
+                      0,
+                      Math.min(100, Number(e.target.value) || 0),
+                    );
+                    setGroups((prev) =>
+                      prev.map((x) =>
+                        x.id === g.id ? { ...x, weight } : x,
+                      ),
+                    );
+                  }}
+                  onBlur={() => persistGroup(g.id, { weight: g.weight })}
+                />
+              </Field>
+              <button
+                type="button"
+                onClick={() => deleteGroup(g.id)}
+                className="focus-ring mb-1 rounded-md p-2 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
+                aria-label={`Delete ${g.name}`}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+
+          <div className="flex items-end gap-2 border-t border-black/5 pt-4">
+            <Field label="Add group" className="flex-1">
+              <Input
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder="e.g. Homework"
+              />
+            </Field>
+            <Field label="Weight %" className="w-24">
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={newGroupWeight}
+                onChange={(e) =>
+                  setNewGroupWeight(
+                    Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                  )
+                }
+              />
+            </Field>
+            <Button
+              className="mb-0.5"
+              onClick={addGroup}
+              disabled={!newGroupName.trim()}
+            >
+              <Plus className="h-4 w-4" /> Add
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-faint">
+            Weights total {weightSum}%.
+            {weightSum !== 100 && (
+              <span className="text-amber-700 dark:text-amber-400">
+                {" "}
+                Canvas normalizes when this isn&apos;t 100% — ungrouped work
+                fills any remainder.
+              </span>
+            )}
           </p>
         </div>
       </Modal>

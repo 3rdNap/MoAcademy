@@ -11,6 +11,10 @@ import { Field, Input, Textarea } from "@/components/ui/form";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection } from "@/lib/local-store";
+import {
+  fetchAssignmentGroups,
+  type AssignmentGroup,
+} from "@/lib/course-content-db";
 import { roster as fakeRoster } from "@/lib/roster";
 import {
   fetchCourseRoster,
@@ -27,6 +31,74 @@ import type { Assignment, Course } from "@/lib/types";
 interface GradeCell {
   id: string; // `${studentId}__${assignmentId}`
   score: number;
+}
+
+/**
+ * Canvas-style weighted total, implemented once for the student pill,
+ * instructor totals, and CSV so on-screen and exported figures always agree.
+ *
+ * `earnedOf` returns a graded item's earned score, or null/undefined when the
+ * item isn't graded. Groups with weight > 0 and ≥1 graded item participate; a
+ * group's percent renormalizes against the sum of participating weights, so an
+ * ungraded group is excluded rather than counted as zero. Ungrouped graded
+ * work (no group, or a group deleted out from under it) forms an implicit
+ * bucket weighted by whatever the defined weights leave under 100. With no
+ * weighted groups (or an offline fetch) this is plain points math.
+ */
+function computeTotal(
+  assignments: Assignment[],
+  earnedOf: (a: Assignment) => number | null | undefined,
+  groups: AssignmentGroup[] | null,
+): number | null {
+  const graded = assignments.filter((a) => earnedOf(a) != null);
+  const hasWeighted = groups != null && groups.some((g) => g.weight > 0);
+  if (!hasWeighted) {
+    const earned = graded.reduce((n, a) => n + (earnedOf(a) ?? 0), 0);
+    const possible = graded.reduce((n, a) => n + a.points, 0);
+    return possible ? Math.round((earned / possible) * 100) : null;
+  }
+
+  const byId = new Map(groups!.map((g) => [g.id, g]));
+  const bucketPct = (items: Assignment[]): number | null => {
+    const possible = items.reduce((n, a) => n + a.points, 0);
+    if (!possible) return null;
+    const earned = items.reduce((n, a) => n + (earnedOf(a) ?? 0), 0);
+    return earned / possible;
+  };
+
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (const g of groups!) {
+    if (g.weight <= 0) continue;
+    const pct = bucketPct(graded.filter((a) => a.groupId === g.id));
+    if (pct == null) continue;
+    weightedSum += g.weight * pct;
+    weightTotal += g.weight;
+  }
+
+  const definedWeight = groups!.reduce((n, g) => n + g.weight, 0);
+  const implicitWeight = Math.max(0, 100 - definedWeight);
+  if (implicitWeight > 0) {
+    const pct = bucketPct(
+      graded.filter((a) => !a.groupId || !byId.has(a.groupId)),
+    );
+    if (pct != null) {
+      weightedSum += implicitWeight * pct;
+      weightTotal += implicitWeight;
+    }
+  }
+
+  if (weightTotal === 0) return null;
+  return Math.round((weightedSum / weightTotal) * 100);
+}
+
+/** "Weighted: Homework 40% · Exams 60%" — or null when no weighted groups. */
+function weightScheme(groups: AssignmentGroup[] | null): string | null {
+  const active = (groups ?? []).filter((g) => g.weight > 0);
+  if (active.length === 0) return null;
+  return (
+    "Weighted: " + active.map((g) => `${g.name} ${g.weight}%`).join(" · ")
+  );
 }
 
 export function CourseGradesBoard({
@@ -52,10 +124,29 @@ export function CourseGradesBoard({
     [seed, authored.items],
   );
 
+  // Weighted grading buckets, fetched once here and passed to both views.
+  // Null = offline/none → plain points math downstream.
+  const [groups, setGroups] = useState<AssignmentGroup[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchAssignmentGroups(course.id).then((g) => alive && setGroups(g));
+    return () => {
+      alive = false;
+    };
+  }, [course.id]);
+
   if (!teaching) {
-    return <StudentGrades course={course} assignments={assignments} />;
+    return (
+      <StudentGrades course={course} assignments={assignments} groups={groups} />
+    );
   }
-  return <InstructorGradebook course={course} assignments={assignments} />;
+  return (
+    <InstructorGradebook
+      course={course}
+      assignments={assignments}
+      groups={groups}
+    />
+  );
 }
 
 /* ----------------------------- Student view ----------------------------- */
@@ -63,9 +154,11 @@ export function CourseGradesBoard({
 function StudentGrades({
   course,
   assignments,
+  groups,
 }: {
   course: Course;
   assignments: Assignment[];
+  groups: AssignmentGroup[] | null;
 }) {
   // Real submissions override the seed/local status+score where present; ids
   // that aren't real assignment rows just won't match anything.
@@ -87,13 +180,16 @@ function StudentGrades({
     return { status: sub.status, score: sub.score ?? undefined };
   }
 
-  const graded = assignments.filter((a) => {
+  // A graded item's earned score (null otherwise) drives the weighted total.
+  const earnedOf = (a: Assignment) => {
     const e = effective(a);
-    return e.status === "graded" && e.score != null;
-  });
-  const earned = graded.reduce((n, a) => n + (effective(a).score ?? 0), 0);
+    return e.status === "graded" && e.score != null ? e.score : null;
+  };
+  const graded = assignments.filter((a) => earnedOf(a) != null);
+  const earned = graded.reduce((n, a) => n + (earnedOf(a) ?? 0), 0);
   const possible = graded.reduce((n, a) => n + a.points, 0);
-  const pct = possible ? Math.round((earned / possible) * 100) : 0;
+  const pct = computeTotal(assignments, earnedOf, groups) ?? 0;
+  const scheme = weightScheme(groups);
 
   return (
     <>
@@ -101,16 +197,21 @@ function StudentGrades({
         title="Grades"
         subtitle={`Based on ${graded.length} graded items in ${course.code}.`}
         action={
-          <div
-            className="rounded-xl px-4 py-2 text-right text-white shadow-card"
-            style={{ backgroundColor: course.color }}
-          >
-            <p className="text-2xl font-bold leading-none">
-              {pct}% · {letterGrade(pct)}
-            </p>
-            <p className="text-xs text-white/85">
-              {earned}/{possible} points
-            </p>
+          <div className="text-right">
+            <div
+              className="rounded-xl px-4 py-2 text-white shadow-card"
+              style={{ backgroundColor: course.color }}
+            >
+              <p className="text-2xl font-bold leading-none">
+                {pct}% · {letterGrade(pct)}
+              </p>
+              <p className="text-xs text-white/85">
+                {earned}/{possible} points
+              </p>
+            </div>
+            {scheme && (
+              <p className="mt-1 text-xs text-ink-faint">{scheme}</p>
+            )}
           </div>
         }
       />
@@ -174,9 +275,11 @@ function StudentGrades({
 function InstructorGradebook({
   course,
   assignments,
+  groups,
 }: {
   course: Course;
   assignments: Assignment[];
+  groups: AssignmentGroup[] | null;
 }) {
   const grades = useLocalCollection<GradeCell>(
     `moacademy.gradebook.${course.id}`,
@@ -318,18 +421,13 @@ function InstructorGradebook({
     setReviewCell(null);
   }
 
+  // Weighted (or plain, when no groups) total for one student — shared by the
+  // on-screen total column and the CSV export so they never diverge.
   function studentPct(sid: string) {
-    let earned = 0;
-    let possible = 0;
-    for (const a of assignments) {
-      const s = getScore(sid, a.id);
-      if (s != null) {
-        earned += s;
-        possible += a.points;
-      }
-    }
-    return possible ? Math.round((earned / possible) * 100) : null;
+    return computeTotal(assignments, (a) => getScore(sid, a.id), groups);
   }
+
+  const scheme = weightScheme(groups);
 
   function assignmentAvg(aid: string, points: number) {
     const scores = activeRoster
@@ -391,6 +489,8 @@ function InstructorGradebook({
           ) : undefined
         }
       />
+
+      {scheme && <p className="mb-4 text-xs text-ink-faint">{scheme}</p>}
 
       <div className="card overflow-x-auto">
         <table className="w-full border-collapse text-sm">
