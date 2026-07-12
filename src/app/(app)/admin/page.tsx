@@ -3,17 +3,19 @@ import {
   getAdminOverview,
   getAssignments,
   getCourses,
+  getCurrentTerm,
   getCurrentUser,
 } from "@/lib/data";
 
 export const metadata = { title: "Admin" };
 
 export default async function AdminPage() {
-  const [courses, assignments, overview, user] = await Promise.all([
+  const [courses, assignments, overview, user, currentTerm] = await Promise.all([
     getCourses(),
     getAssignments(),
     getAdminOverview(),
     getCurrentUser(),
+    getCurrentTerm(),
   ]);
   return (
     <AdminConsole
@@ -21,6 +23,7 @@ export default async function AdminPage() {
       assignments={assignments}
       overview={overview}
       currentUserId={user.id}
+      currentTerm={currentTerm}
     />
   );
 }

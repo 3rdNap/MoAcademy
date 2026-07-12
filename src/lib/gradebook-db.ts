@@ -6,7 +6,7 @@
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { subjects } from "@/lib/billing/subjects";
-import { CURRENT_TERM } from "@/lib/billing/registration";
+import { getClientTerm } from "@/lib/term";
 import type { SubmissionStatus } from "@/lib/types";
 
 export interface RemoteSubmission {
@@ -179,12 +179,13 @@ export async function fetchCourseRoster(
   const supabase = createSupabaseBrowserClient();
   if (!supabase) return null;
   try {
+    const term = await getClientTerm();
     const { data: enr, error: enrError } = await supabase
       .from("subject_enrollments")
       .select("user_id")
       .eq("subject_code", code)
       .eq("role", "student")
-      .eq("term", CURRENT_TERM);
+      .eq("term", term);
     if (enrError || !enr) return null;
     const ids = enr.map((r) => r.user_id as string);
     if (ids.length === 0) return [];

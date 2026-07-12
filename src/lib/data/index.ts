@@ -45,6 +45,26 @@ export const getAuthState = cache(
   },
 );
 
+/**
+ * The institution's active term — read from app_settings (migration 0029, key
+ * 'current_term'), which an admin can advance via the console. Falls back to
+ * CURRENT_TERM on any error/absence (offline, unmigrated, or unset).
+ */
+export const getCurrentTerm = cache(async (): Promise<string> => {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return CURRENT_TERM;
+  try {
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "current_term")
+      .maybeSingle();
+    return (data?.value as string) ?? CURRENT_TERM;
+  } catch {
+    return CURRENT_TERM;
+  }
+});
+
 export interface AdminPerson {
   id: string;
   name: string;
@@ -195,6 +215,7 @@ export async function getChildCourses(childId: string): Promise<Course[]> {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return [];
   try {
+    const term = await getCurrentTerm();
     // Institutional enrolments first (admin-issued), then legacy paid regs.
     try {
       const { data: enr } = await supabase
@@ -202,15 +223,16 @@ export async function getChildCourses(childId: string): Promise<Course[]> {
         .select("subject_code")
         .eq("user_id", childId)
         .eq("role", "student")
-        .eq("term", CURRENT_TERM);
+        .eq("term", term);
       const enrolled = new Set((enr ?? []).map((r) => r.subject_code as string));
       if (enrolled.size > 0) {
         const chosen = subjects.filter((s) => enrolled.has(s.code));
         const names = await instructorNamesFor(
           chosen.map((s) => s.code),
           supabase,
+          term,
         );
-        return chosen.map((s) => subjectToCourse(s, names.get(s.code)));
+        return chosen.map((s) => subjectToCourse(s, names.get(s.code), term));
       }
     } catch {
       /* subject_enrollments not migrated yet */
@@ -225,8 +247,8 @@ export async function getChildCourses(childId: string): Promise<Course[]> {
       for (const it of r.registration_items ?? []) codes.add(it.code);
     }
     const chosen = subjects.filter((s) => codes.has(s.code));
-    const names = await instructorNamesFor(chosen.map((s) => s.code), supabase);
-    return chosen.map((s) => subjectToCourse(s, names.get(s.code)));
+    const names = await instructorNamesFor(chosen.map((s) => s.code), supabase, term);
+    return chosen.map((s) => subjectToCourse(s, names.get(s.code), term));
   } catch {
     return [];
   }
@@ -249,6 +271,7 @@ export async function getCourseRoster(
   if (!code) return null;
   const supabase = await createSupabaseServerClient();
   if (!supabase) return null;
+  const term = await getCurrentTerm();
 
   let ids: string[];
   try {
@@ -257,7 +280,7 @@ export async function getCourseRoster(
       .select("user_id")
       .eq("subject_code", code)
       .eq("role", "student")
-      .eq("term", CURRENT_TERM);
+      .eq("term", term);
     // An RLS-empty result for a non-teacher surfaces as [] here, which is a
     // real "no roster to show" state and falls back below; a query error is a
     // genuine "can't determine a roster" and returns null.
@@ -316,11 +339,12 @@ export const getMessageContacts = cache(
           .sort((a, b) => a.name.localeCompare(b.name));
       }
 
+      const term = await getCurrentTerm();
       const { data: mine, error: mineError } = await supabase
         .from("subject_enrollments")
         .select("subject_code")
         .eq("user_id", userId)
-        .eq("term", CURRENT_TERM);
+        .eq("term", term);
       if (mineError) return null;
       const codes = Array.from(
         new Set((mine ?? []).map((r) => r.subject_code as string)),
@@ -331,7 +355,7 @@ export const getMessageContacts = cache(
         .from("subject_enrollments")
         .select("user_id")
         .in("subject_code", codes)
-        .eq("term", CURRENT_TERM);
+        .eq("term", term);
       if (matesError) return null;
       const ids = Array.from(
         new Set(
@@ -402,7 +426,11 @@ export async function getAnnouncementsForCourses(
 }
 
 /** A registered subject becomes the student's course. */
-function subjectToCourse(s: Subject, instructorName = "To be assigned"): Course {
+function subjectToCourse(
+  s: Subject,
+  instructorName = "To be assigned",
+  term: string = CURRENT_TERM,
+): Course {
   let h = 0;
   for (let i = 0; i < s.id.length; i++) h = s.id.charCodeAt(i) + ((h << 5) - h);
   return {
@@ -410,7 +438,7 @@ function subjectToCourse(s: Subject, instructorName = "To be assigned"): Course 
     code: s.code,
     name: s.name,
     shortName: s.name,
-    term: CURRENT_TERM,
+    term,
     description: `${s.name} · ${s.category}`,
     color: `hsl(${Math.abs(h) % 360} 62% 45%)`,
     instructor: instructorName,
@@ -434,6 +462,7 @@ type SupabaseClient = NonNullable<
 async function instructorNamesFor(
   codes: string[],
   supabase: SupabaseClient,
+  term: string = CURRENT_TERM,
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   if (codes.length === 0) return map;
@@ -442,7 +471,7 @@ async function instructorNamesFor(
       .from("subject_enrollments")
       .select("subject_code, user_id")
       .eq("role", "instructor")
-      .eq("term", CURRENT_TERM)
+      .eq("term", term)
       .in("subject_code", codes);
     const rows = (teach ?? []) as { subject_code: string; user_id: string }[];
     const ids = Array.from(new Set(rows.map((r) => r.user_id)));
@@ -654,12 +683,14 @@ export const getCourses = cache(async (): Promise<Course[]> => {
           .eq("id", user.id)
           .maybeSingle();
         const role = (profile?.role as Role) ?? "student";
+        const term = await getCurrentTerm();
         const toCourses = async (chosen: Subject[]): Promise<Course[]> => {
           const names = await instructorNamesFor(
             chosen.map((s) => s.code),
             supabase,
+            term,
           );
-          return chosen.map((s) => subjectToCourse(s, names.get(s.code)));
+          return chosen.map((s) => subjectToCourse(s, names.get(s.code), term));
         };
 
         if (role === "admin") return toCourses(subjects);
@@ -673,7 +704,7 @@ export const getCourses = cache(async (): Promise<Course[]> => {
             .select("subject_code")
             .eq("user_id", user.id)
             .eq("role", enrolRole)
-            .eq("term", CURRENT_TERM);
+            .eq("term", term);
           const enrolled = new Set((enr ?? []).map((r) => r.subject_code as string));
           if (enrolled.size > 0) {
             return toCourses(subjects.filter((s) => enrolled.has(s.code)));

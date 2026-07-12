@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { CURRENT_TERM } from "@/lib/billing/registration";
 import { subjects } from "@/lib/billing/subjects";
@@ -45,6 +45,21 @@ async function requireAdmin() {
   return { admin: createClient(url, serviceKey) };
 }
 
+/** The institution's active term (app_settings, migration 0029), read via the
+ *  service-role client this route already holds. Falls back to CURRENT_TERM. */
+async function getEnrolTerm(admin: SupabaseClient): Promise<string> {
+  try {
+    const { data } = await admin
+      .from("app_settings")
+      .select("value")
+      .eq("key", "current_term")
+      .maybeSingle();
+    return (data as unknown as { value: string } | null)?.value ?? CURRENT_TERM;
+  } catch {
+    return CURRENT_TERM;
+  }
+}
+
 /** GET /api/admin/enroll?userId=…&role=student — the user's current subject codes. */
 export async function GET(req: Request) {
   const { admin, error } = await requireAdmin();
@@ -57,12 +72,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "userId is required." }, { status: 400 });
   }
 
+  const term = await getEnrolTerm(admin);
   const { data } = await admin
     .from("subject_enrollments")
     .select("subject_code")
     .eq("user_id", userId)
     .eq("role", role)
-    .eq("term", CURRENT_TERM);
+    .eq("term", term);
 
   return NextResponse.json({
     subjectCodes: (data ?? []).map((r) => r.subject_code as string),
@@ -99,13 +115,15 @@ export async function POST(req: Request) {
     new Set((body.subjectCodes ?? []).filter((c) => VALID_CODES.has(c))),
   );
 
+  const term = await getEnrolTerm(admin);
+
   // Replace the set for this (user, role, term): clear then insert.
   const { error: delErr } = await admin
     .from("subject_enrollments")
     .delete()
     .eq("user_id", body.userId)
     .eq("role", role)
-    .eq("term", CURRENT_TERM);
+    .eq("term", term);
   if (delErr) {
     return NextResponse.json({ error: "Couldn't update enrolments." }, { status: 500 });
   }
@@ -115,7 +133,7 @@ export async function POST(req: Request) {
       user_id: body.userId,
       subject_code,
       role,
-      term: CURRENT_TERM,
+      term,
     }));
     const { error: insErr } = await admin.from("subject_enrollments").insert(rows);
     if (insErr) {

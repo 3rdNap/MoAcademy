@@ -18,6 +18,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { AddPersonButton } from "@/components/admin/AddPersonButton";
 import { ManageSubjectsButton } from "@/components/admin/ManageSubjectsButton";
 import { ResetPasswordButton } from "@/components/admin/ResetPasswordButton";
+import { TermControl } from "@/components/admin/TermControl";
 import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin, roleLabel } from "@/lib/role";
 import { roster } from "@/lib/roster";
@@ -31,12 +32,15 @@ export function AdminConsole({
   assignments,
   overview,
   currentUserId,
+  currentTerm,
 }: {
   courses: Course[];
   assignments: Assignment[];
   /** Real institution data for a signed-in admin; null falls back to demo. */
   overview: AdminOverview | null;
   currentUserId?: string;
+  /** The institution's active term (app_settings, migration 0029). */
+  currentTerm: string;
 }) {
   const { role, hydrated } = useRole();
   const router = useRouter();
@@ -118,6 +122,7 @@ export function AdminConsole({
             ? "Live institution overview."
             : "Demo overview — sign in as an admin to see real data."
         }
+        action={<TermControl currentTerm={currentTerm} />}
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
