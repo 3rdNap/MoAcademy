@@ -539,6 +539,7 @@ interface RawAssignment {
   due_at: string;
   available_at: string | null;
   points: number;
+  group_id?: string | null;
 }
 function mapAssignment(r: RawAssignment): Assignment {
   return {
@@ -551,6 +552,7 @@ function mapAssignment(r: RawAssignment): Assignment {
     dueAt: r.due_at,
     availableAt: r.available_at ?? undefined,
     points: r.points,
+    groupId: r.group_id ?? undefined,
     status: "not_started",
   };
 }

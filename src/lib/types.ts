@@ -79,6 +79,8 @@ export interface Assignment {
   status: SubmissionStatus;
   score?: number;
   description: string;
+  /** Weighted grading bucket (assignment_groups, migration 0029). */
+  groupId?: string;
 }
 
 export interface Announcement {
