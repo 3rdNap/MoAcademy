@@ -7,6 +7,7 @@ import {
   getAssignments,
   getAssignmentsForCourses,
   getAuthState,
+  getChildAttendance,
   getChildCourses,
   getChildGrades,
   getCourses,
@@ -26,11 +27,13 @@ export default async function FamilyPage() {
       children.map(async (child) => {
         const courses = await getChildCourses(child.id);
         const courseIds = courses.map((c) => c.id);
-        const [assignments, announcements, grades] = await Promise.all([
-          getAssignmentsForCourses(courseIds),
-          getAnnouncementsForCourses(courseIds),
-          getChildGrades(child.id),
-        ]);
+        const [assignments, announcements, grades, attendance] =
+          await Promise.all([
+            getAssignmentsForCourses(courseIds),
+            getAnnouncementsForCourses(courseIds),
+            getChildGrades(child.id),
+            getChildAttendance(child.id),
+          ]);
         const upcoming = assignments
           .filter((a) => daysUntil(a.dueAt) >= 0 && daysUntil(a.dueAt) <= 14)
           .slice(0, 8);
@@ -40,6 +43,7 @@ export default async function FamilyPage() {
           upcoming,
           announcements: announcements.slice(0, 6),
           grades,
+          attendance,
         };
       }),
     );

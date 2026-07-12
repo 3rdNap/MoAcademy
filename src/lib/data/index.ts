@@ -766,6 +766,52 @@ export async function getSyllabus(
   }
 }
 
+export interface CourseMeeting {
+  id: string;
+  courseKey: string;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  location: string;
+}
+
+interface RawCourseMeeting {
+  id: string;
+  course_key: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  location: string | null;
+}
+function mapMeeting(r: RawCourseMeeting): CourseMeeting {
+  return {
+    id: r.id,
+    courseKey: r.course_key,
+    weekday: r.weekday,
+    startTime: r.start_time.slice(0, 5),
+    endTime: r.end_time.slice(0, 5),
+    location: r.location ?? "",
+  };
+}
+
+/** Weekly timetable slots for a course (migration 0030). Everyone can read;
+ *  [] on error/offline, house style. */
+export async function getCourseMeetings(courseId: string): Promise<CourseMeeting[]> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("course_meetings")
+      .select("*")
+      .eq("course_key", courseId)
+      .order("weekday")
+      .order("start_time");
+    return (data ?? []).map((r) => mapMeeting(r as unknown as RawCourseMeeting));
+  } catch {
+    return [];
+  }
+}
+
 export const getModules = cache(async (courseId: string): Promise<CourseModule[]> => {
   const { authed } = await getAuthState();
   // Seed modules are demo-only; signed-in users see just real content.
@@ -1061,5 +1107,40 @@ export async function getChildGrades(childId: string): Promise<ChildCourseGrade[
     return Array.from(byCourse.values());
   } catch {
     return [];
+  }
+}
+
+export interface ChildAttendance {
+  present: number;
+  absent: number;
+  late: number;
+  excused: number;
+}
+
+/**
+ * Attendance tallies for a linked child across every course the guardian may
+ * read (guardian RLS, migration 0030). Zeroed when signed out / not a parent.
+ */
+export async function getChildAttendance(
+  childId: string,
+): Promise<ChildAttendance> {
+  const empty: ChildAttendance = { present: 0, absent: 0, late: 0, excused: 0 };
+  const { authed, role } = await getAuthState();
+  if (!authed || role !== "parent") return empty;
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return empty;
+  try {
+    const { data } = await supabase
+      .from("attendance")
+      .select("status")
+      .eq("student_id", childId);
+    const rows = (data ?? []) as { status: keyof ChildAttendance }[];
+    const tally = { ...empty };
+    for (const r of rows) {
+      if (r.status in tally) tally[r.status] += 1;
+    }
+    return tally;
+  } catch {
+    return empty;
   }
 }
