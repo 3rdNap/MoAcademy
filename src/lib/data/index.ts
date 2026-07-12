@@ -1076,17 +1076,16 @@ interface RawChildSubmission {
   } | null;
 }
 
-/** Per-course grade rollup for a linked child (guardian RLS, migration 0017). */
-export async function getChildGrades(childId: string): Promise<ChildCourseGrade[]> {
-  const { authed, role } = await getAuthState();
-  if (!authed || role !== "parent") return [];
+/** Per-course grade rollup for the given user — shared by the guardian
+ *  (child) and self-serve report-card variants below. */
+async function courseGradesFor(userId: string): Promise<ChildCourseGrade[]> {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return [];
   try {
     const { data } = await supabase
       .from("submissions")
       .select("score, assignments(course_key, course_id, points)")
-      .eq("user_id", childId)
+      .eq("user_id", userId)
       .not("score", "is", null);
     const rows = (data ?? []) as unknown as RawChildSubmission[];
     const byCourse = new Map<string, ChildCourseGrade>();
@@ -1110,11 +1109,54 @@ export async function getChildGrades(childId: string): Promise<ChildCourseGrade[
   }
 }
 
+/** Per-course grade rollup for a linked child (guardian RLS, migration 0017). */
+export async function getChildGrades(childId: string): Promise<ChildCourseGrade[]> {
+  const { authed, role } = await getAuthState();
+  if (!authed || role !== "parent") return [];
+  return courseGradesFor(childId);
+}
+
+/** Per-course grade rollup for the signed-in user's own submissions — same
+ *  shape as {@link getChildGrades}, for the student's own report card. */
+export async function getMyCourseGrades(): Promise<ChildCourseGrade[]> {
+  const { authed, userId } = await getAuthState();
+  if (!authed || !userId) return [];
+  return courseGradesFor(userId);
+}
+
 export interface ChildAttendance {
   present: number;
   absent: number;
   late: number;
   excused: number;
+}
+
+const EMPTY_ATTENDANCE: ChildAttendance = {
+  present: 0,
+  absent: 0,
+  late: 0,
+  excused: 0,
+};
+
+/** Attendance tallies for the given user — shared by the guardian (child)
+ *  and self-serve report-card variants below. */
+async function attendanceFor(userId: string): Promise<ChildAttendance> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return EMPTY_ATTENDANCE;
+  try {
+    const { data } = await supabase
+      .from("attendance")
+      .select("status")
+      .eq("student_id", userId);
+    const rows = (data ?? []) as { status: keyof ChildAttendance }[];
+    const tally = { ...EMPTY_ATTENDANCE };
+    for (const r of rows) {
+      if (r.status in tally) tally[r.status] += 1;
+    }
+    return tally;
+  } catch {
+    return EMPTY_ATTENDANCE;
+  }
 }
 
 /**
@@ -1124,23 +1166,16 @@ export interface ChildAttendance {
 export async function getChildAttendance(
   childId: string,
 ): Promise<ChildAttendance> {
-  const empty: ChildAttendance = { present: 0, absent: 0, late: 0, excused: 0 };
   const { authed, role } = await getAuthState();
-  if (!authed || role !== "parent") return empty;
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return empty;
-  try {
-    const { data } = await supabase
-      .from("attendance")
-      .select("status")
-      .eq("student_id", childId);
-    const rows = (data ?? []) as { status: keyof ChildAttendance }[];
-    const tally = { ...empty };
-    for (const r of rows) {
-      if (r.status in tally) tally[r.status] += 1;
-    }
-    return tally;
-  } catch {
-    return empty;
-  }
+  if (!authed || role !== "parent") return EMPTY_ATTENDANCE;
+  return attendanceFor(childId);
+}
+
+/** Attendance tallies for the signed-in user's own record — same shape as
+ *  {@link getChildAttendance}, for the student's own report card. Zeroed
+ *  when signed out. */
+export async function getMyAttendance(): Promise<ChildAttendance> {
+  const { authed, userId } = await getAuthState();
+  if (!authed || !userId) return EMPTY_ATTENDANCE;
+  return attendanceFor(userId);
 }

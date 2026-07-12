@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FileText } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Badge } from "@/components/ui/Badge";
@@ -33,11 +34,20 @@ export default async function GradesPage() {
         title="Grades"
         subtitle="Your standing across every course this term."
         action={
-          <div className="rounded-xl bg-brand-600 px-4 py-2 text-right text-white shadow-card">
-            <p className="text-2xl font-bold leading-none">
-              {Math.round(overall)}% · {letterGrade(overall)}
-            </p>
-            <p className="text-xs text-white/85">Term GPA estimate</p>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/report"
+              className="focus-ring flex items-center gap-1.5 rounded-lg border border-black/10 bg-surface px-3 py-2 text-sm font-medium text-ink hover:bg-surface-subtle dark:border-white/10"
+            >
+              <FileText className="h-4 w-4" />
+              Report card
+            </Link>
+            <div className="rounded-xl bg-brand-600 px-4 py-2 text-right text-white shadow-card">
+              <p className="text-2xl font-bold leading-none">
+                {Math.round(overall)}% · {letterGrade(overall)}
+              </p>
+              <p className="text-xs text-white/85">Term GPA estimate</p>
+            </div>
           </div>
         }
       />
