@@ -20,7 +20,6 @@ import { CourseCard } from "@/components/dashboard/CourseCard";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { UpcomingList } from "@/components/dashboard/UpcomingList";
 import { RoadmapDeadlinesWidget } from "@/components/dashboard/RoadmapDeadlinesWidget";
-import { BillingStatusWidget } from "@/components/dashboard/BillingStatusWidget";
 import { PinnedCourses } from "@/components/dashboard/PinnedCourses";
 import { StudyPlanWidget } from "@/components/dashboard/StudyPlanWidget";
 import { RolePreviewBanner } from "@/components/role/RolePreviewBanner";
@@ -155,14 +154,13 @@ export default async function DashboardPage() {
             )}
           </section>
 
-          {/* Planning: roadmap deadlines + billing status (from the browser) */}
+          {/* Planning: roadmap deadlines (from the browser) */}
           <section>
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-faint">
               Planning
             </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <RoadmapDeadlinesWidget />
-              <BillingStatusWidget />
             </div>
           </section>
         </div>
@@ -232,7 +230,6 @@ function AdminHome({
     { href: "/admin", label: "Admin console", icon: ShieldCheck, desc: "People, roles & registrations" },
     { href: "/study-guides", label: "Study guides", icon: Library, desc: "Upload guides for students" },
     { href: "/courses", label: "Subjects", icon: BookOpen, desc: "Browse the catalogue" },
-    { href: "/billing", label: "Billing", icon: CreditCard, desc: "Pricing & registration" },
   ];
 
   return (

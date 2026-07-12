@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { hasSupabaseEnv } from "@/lib/supabase/env";
-import { isPayFastConfigured, isSandbox } from "@/lib/payments/payfast";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +16,6 @@ export async function GET() {
     ok: true,
     supabase: hasSupabaseEnv(),
     assistant: Boolean(process.env.ANTHROPIC_API_KEY),
-    payments: isPayFastConfigured() ? (isSandbox() ? "sandbox" : "live") : "off",
     // Admin role management needs the server-only service-role key.
     roleManagement: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? null,

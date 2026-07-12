@@ -60,8 +60,14 @@ not a bug.
   exclude the bundled seed rows (`useLocalCollection` persists its seed
   defaults even for untouched visitors, so filter by seed ids).
 - **Still browser-local only** via `useLocalCollection`
-  (`src/lib/local-store.ts`, keys `moacademy.*`): billing/registrations
-  (legacy — superseded by admin-driven enrolment) and all demo fallbacks.
+  (`src/lib/local-store.ts`, keys `moacademy.*`): the demo fallbacks.
+- **Self-service billing/payments is removed** (PayFast checkout, billing
+  dashboard, pay-to-register): `/billing` is an informational office notice;
+  study guides scope by `subject_enrollments`. `src/lib/billing/` keeps the
+  subject catalogue, pricing helpers (admin revenue display), CURRENT_TERM
+  fallback and demo types; admin console keeps registration history. The
+  server-side legacy fallback (paid registrations → courses) remains as an
+  invisible compat path.
 - **RLS helper convention:** security-definer helpers live in the
   non-API-exposed `private` schema (`is_admin`, `is_guardian_of`,
   `teaches_assignment`, `teaches_student`, `shares_subject_with`,

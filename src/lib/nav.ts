@@ -2,7 +2,6 @@ import type { ComponentType } from "react";
 import {
   Calendar,
   Compass,
-  CreditCard,
   GraduationCap,
   Home,
   Inbox,
@@ -38,7 +37,6 @@ export const globalNav: GlobalNavItem[] = [
   { label: "Calendar", href: "/calendar", icon: Calendar, onMobileBar: true },
   { label: "Inbox", href: "/inbox", icon: Inbox, badgeKey: "inbox" },
   { label: "Grades", href: "/grades", icon: GraduationCap },
-  { label: "Billing", href: "/billing", icon: CreditCard },
 ];
 
 export interface CourseNavItem {

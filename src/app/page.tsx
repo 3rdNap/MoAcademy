@@ -3,7 +3,7 @@ import {
   ArrowRight,
   BookOpen,
   Compass,
-  CreditCard,
+  GraduationCap,
   Library,
   Sparkles,
   Users,
@@ -27,7 +27,7 @@ const FEATURES = [
   {
     icon: Library,
     title: "Study guides for your subjects",
-    body: "Curated PDF guides with thumbnails, matched to the subjects you're registered for — no clutter from subjects you don't take.",
+    body: "Curated PDF guides with thumbnails, matched to the subjects you're enrolled in — no clutter from subjects you don't take.",
   },
   {
     icon: Compass,
@@ -40,9 +40,9 @@ const FEATURES = [
     body: "A family dashboard shows each child's average, course progress, upcoming deadlines and recent grades at a glance.",
   },
   {
-    icon: CreditCard,
-    title: "Fair per-subject pricing",
-    body: "Pay only for the subjects you register. The more you add, the cheaper each one gets — bulk discounts up to 30%.",
+    icon: GraduationCap,
+    title: "Run by the academy",
+    body: "Accounts and subjects are set up by the academy office, so you sign in to exactly the courses you're enrolled in — nothing to configure.",
   },
 ];
 
@@ -131,22 +131,22 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing teaser */}
+      {/* Closing teaser */}
       <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6">
         <div className="flex flex-col items-center gap-4 rounded-2xl bg-brand-950 px-6 py-10 text-center text-white sm:px-10">
           <h2 className="font-display text-2xl font-extrabold tracking-tight sm:text-3xl">
-            Pay per subject. Save as you add more.
+            Your subjects, all in one place.
           </h2>
           <p className="max-w-xl text-sm text-brand-200 sm:text-base">
-            No flat fees for things you don&apos;t need — register exactly the
-            subjects you want, and bulk discounts of up to 30% kick in as your
-            list grows.
+            The academy office enrols you in your subjects — then everything you
+            need, from course content to study guides, is waiting when you sign
+            in.
           </p>
           <Link
-            href="/billing"
+            href="/courses"
             className="focus-ring mt-2 inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-brand-950 hover:bg-brand-50"
           >
-            See pricing <ArrowRight className="h-4 w-4" />
+            Explore courses <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
       </section>
