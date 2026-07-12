@@ -5,13 +5,17 @@ import { usePathname } from "next/navigation";
 import { courseNav, type CourseNavItem } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
-// Syllabus sits right after Home, mirroring Canvas. Injected here (rather than
-// in the shared nav list) to keep the change scoped to the course tab bar.
-const navItems: CourseNavItem[] = courseNav.flatMap((item) =>
-  item.segment === ""
-    ? [item, { label: "Syllabus", segment: "syllabus" }]
-    : [item],
-);
+// Extra tabs injected after a given base segment (rather than added to the
+// shared nav list) to keep these additions scoped to the course tab bar:
+// Syllabus follows Home and Attendance follows Grades, mirroring Canvas.
+const injectAfter: Record<string, CourseNavItem[]> = {
+  "": [{ label: "Syllabus", segment: "syllabus" }],
+  grades: [{ label: "Attendance", segment: "attendance" }],
+};
+const navItems: CourseNavItem[] = courseNav.flatMap((item) => [
+  item,
+  ...(injectAfter[item.segment] ?? []),
+]);
 
 /**
  * Canvas-style left course navigation. Highlights the active section based on

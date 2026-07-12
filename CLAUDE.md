@@ -109,7 +109,12 @@ The app runs as an institution, not a self-service signup:
   migration 0029; console "Term:" control) — `CURRENT_TERM` is only the
   fallback. Weighted assignment groups (0029) drive gradebook totals when
   an instructor gives groups weight; plain points math otherwise.
-- All migrations through **0029** are applied to the live Supabase project
+- **Attendance + timetables** (migration 0030): per-course attendance
+  registers (teaching accounts of the subject write via
+  `private.teaches_course`; students/guardians read their own) and weekly
+  `course_meetings` slots surfaced on the course home and expanded into
+  calendar occurrences client-side.
+- All migrations through **0030** are applied to the live Supabase project
   (incl. the private `submissions` storage bucket — signed-URL reads for the
   owner or the assignment's teaching accounts). Admin console can reset a
   forgotten password (`/api/admin/reset-password`, service-role); the new

@@ -13,7 +13,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { daysUntil, formatDate, formatDateTime, letterGrade } from "@/lib/utils";
 import type { Announcement, Assignment, Course } from "@/lib/types";
-import type { ChildCourseGrade, GuardianChild } from "@/lib/data";
+import type {
+  ChildAttendance,
+  ChildCourseGrade,
+  GuardianChild,
+} from "@/lib/data";
 
 export interface ChildView {
   child: GuardianChild;
@@ -21,6 +25,7 @@ export interface ChildView {
   upcoming: Assignment[];
   announcements: Announcement[];
   grades: ChildCourseGrade[];
+  attendance: ChildAttendance;
 }
 
 /**
@@ -52,7 +57,13 @@ export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) 
     );
   }
 
-  const { child, courses, upcoming, announcements, grades } = current;
+  const { child, courses, upcoming, announcements, grades, attendance } =
+    current;
+  const attDays =
+    attendance.present + attendance.absent + attendance.late + attendance.excused;
+  const attRate = attDays
+    ? Math.round(((attendance.present + attendance.late) / attDays) * 100)
+    : null;
   const initials = child.name
     .split(" ")
     .slice(0, 2)
@@ -143,11 +154,18 @@ export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) 
             <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-faint">
               {child.name.split(" ")[0]}&apos;s courses
             </h2>
-            {overallPct != null && (
-              <Badge tone="neutral">
-                Overall {overallPct}% · {letterGrade(overallPct)}
-              </Badge>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {attRate != null && (
+                <Badge tone={attendance.absent > 0 ? "warning" : "success"}>
+                  {attRate}% attendance · {attendance.absent} absent
+                </Badge>
+              )}
+              {overallPct != null && (
+                <Badge tone="neutral">
+                  Overall {overallPct}% · {letterGrade(overallPct)}
+                </Badge>
+              )}
+            </div>
           </div>
           {courses.length === 0 ? (
             <div className="card p-6 text-sm text-ink-muted">
