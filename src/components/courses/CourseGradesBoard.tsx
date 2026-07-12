@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquareText, Paperclip } from "lucide-react";
+import { Download, MessageSquareText, Paperclip } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
@@ -148,6 +148,8 @@ function StudentGrades({
                   <td className="px-4 py-3 align-top">
                     {e.status === "graded" ? (
                       <Badge tone="success">Graded</Badge>
+                    ) : e.status === "late" ? (
+                      <Badge tone="warning">Late</Badge>
                     ) : e.status === "missing" ? (
                       <Badge tone="danger">Missing</Badge>
                     ) : (
@@ -338,11 +340,56 @@ function InstructorGradebook({
     return Math.round((avg / points) * 100);
   }
 
+  /** Build a CSV of the current gradebook and trigger a browser download. */
+  function exportCsv() {
+    if (!realRoster) return;
+    const esc = (v: string | number) => {
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = [
+      "Student",
+      "Email",
+      ...assignments.map((a) => `${a.title} (/${a.points})`),
+      "Total %",
+      "Letter",
+    ];
+    const rows = realRoster.map((s) => {
+      const pct = studentPct(s.id);
+      return [
+        s.name,
+        s.email,
+        ...assignments.map((a) => getScore(s.id, a.id) ?? ""),
+        pct ?? "",
+        pct != null ? letterGrade(pct) : "",
+      ];
+    });
+    const csv = [header, ...rows]
+      .map((row) => row.map(esc).join(","))
+      .join("\r\n");
+    const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${course.code}-grades.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <PageHeader
         title="Gradebook"
         subtitle={`${activeRoster.length} students · ${assignments.length} assignments in ${course.code}. Enter scores — they save automatically.`}
+        action={
+          realMode ? (
+            <Button variant="outline" onClick={exportCsv}>
+              <Download className="h-4 w-4" /> Export CSV
+            </Button>
+          ) : undefined
+        }
       />
 
       <div className="card overflow-x-auto">
@@ -382,34 +429,46 @@ function InstructorGradebook({
                       </span>
                     </span>
                   </td>
-                  {assignments.map((a) => (
-                    <td key={a.id} className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min={0}
-                          max={a.points}
-                          value={getScore(s.id, a.id) ?? ""}
-                          onChange={(e) =>
-                            setScore(s.id, a.id, e.target.value, a.points)
-                          }
-                          placeholder="—"
-                          className="focus-ring h-9 w-16 rounded-lg border border-black/10 bg-surface px-2 text-center text-sm text-ink placeholder:text-ink-faint"
-                          aria-label={`${s.name} — ${a.title}`}
-                        />
-                        {realMode && (
-                          <button
-                            type="button"
-                            onClick={() => openReview(s.id, a.id)}
-                            className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-surface-sunken hover:text-ink"
-                            aria-label={`Review ${s.name} — ${a.title}`}
-                          >
-                            <MessageSquareText className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  ))}
+                  {assignments.map((a) => {
+                    const isLate =
+                      realMode && realSubs[cellId(s.id, a.id)]?.status === "late";
+                    return (
+                      <td key={a.id} className="px-3 py-2">
+                        <div className="flex items-center gap-1">
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min={0}
+                              max={a.points}
+                              value={getScore(s.id, a.id) ?? ""}
+                              onChange={(e) =>
+                                setScore(s.id, a.id, e.target.value, a.points)
+                              }
+                              placeholder="—"
+                              className="focus-ring h-9 w-16 rounded-lg border border-black/10 bg-surface px-2 text-center text-sm text-ink placeholder:text-ink-faint"
+                              aria-label={`${s.name} — ${a.title}`}
+                            />
+                            {isLate && (
+                              <span
+                                className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-surface bg-amber-500"
+                                title="Submitted late"
+                              />
+                            )}
+                          </div>
+                          {realMode && (
+                            <button
+                              type="button"
+                              onClick={() => openReview(s.id, a.id)}
+                              className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-surface-sunken hover:text-ink"
+                              aria-label={`Review ${s.name} — ${a.title}`}
+                            >
+                              <MessageSquareText className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })}
                   <td className="px-4 py-2 text-right">
                     {pct != null ? (
                       <span className="font-semibold text-ink">
@@ -459,7 +518,9 @@ function InstructorGradebook({
         title={`${reviewStudent?.name ?? "Student"} · ${reviewAssignment?.title ?? ""}`}
         description={
           reviewSub?.submittedAt
-            ? `Submitted ${relativeTime(reviewSub.submittedAt)}`
+            ? `Submitted ${relativeTime(reviewSub.submittedAt)}${
+                reviewSub.status === "late" ? " · Late" : ""
+              }`
             : undefined
         }
         footer={
