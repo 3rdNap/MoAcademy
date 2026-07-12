@@ -708,6 +708,31 @@ export async function getCourse(id: string): Promise<Course | undefined> {
   return all.find((c) => c.id === id);
 }
 
+/** The shared, instructor-editable syllabus for a course (migration 0028).
+ *  Null when unset/offline/error, so the board falls back to its empty state
+ *  or the anonymous demo's local copy. */
+export async function getSyllabus(
+  courseId: string,
+): Promise<{ body: string; updatedBy: string; updatedAt: string } | null> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return null;
+  try {
+    const { data } = await supabase
+      .from("course_syllabus")
+      .select("body, updated_by, updated_at")
+      .eq("course_key", courseId)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      body: (data.body as string) ?? "",
+      updatedBy: (data.updated_by as string) ?? "",
+      updatedAt: (data.updated_at as string) ?? "",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export const getModules = cache(async (courseId: string): Promise<CourseModule[]> => {
   const { authed } = await getAuthState();
   // Seed modules are demo-only; signed-in users see just real content.

@@ -383,6 +383,34 @@ export async function removeRemoteModuleItem(id: string): Promise<boolean> {
   }
 }
 
+/* ------------------------------- syllabus ------------------------------- */
+
+/** Upsert a course's shared syllabus (migration 0028). False when refused
+ *  (not a teaching account) or offline, so the board can note the failure. */
+export async function saveRemoteSyllabus(
+  courseKey: string,
+  body: string,
+  updatedBy: string,
+): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return false;
+    const { error } = await supabase.from("course_syllabus").upsert({
+      course_key: courseKey,
+      body,
+      updated_by: updatedBy,
+      updated_at: new Date().toISOString(),
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 /** Announcements published in the last `days` across all courses — for the
  * notification bell. Null when offline. */
 export async function fetchRecentRemoteAnnouncements(
