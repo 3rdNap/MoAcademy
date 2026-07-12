@@ -4,11 +4,13 @@ import { CalendarClock, CheckCircle2, Megaphone } from "lucide-react";
 import { Widget } from "@/components/ui/Widget";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { CourseScheduleWidget } from "@/components/courses/CourseScheduleWidget";
 import { itemIcon } from "@/lib/itemMeta";
 import {
   getAnnouncements,
   getAssignments,
   getCourse,
+  getCourseMeetings,
   getModules,
 } from "@/lib/data";
 import { daysUntil, formatDateTime, relativeTime } from "@/lib/utils";
@@ -19,11 +21,12 @@ export default async function CourseHomePage({
   params: Promise<{ courseId: string }>;
 }) {
   const { courseId } = await params;
-  const [course, modules, assignments, announcements] = await Promise.all([
+  const [course, modules, assignments, announcements, meetings] = await Promise.all([
     getCourse(courseId),
     getModules(courseId),
     getAssignments(courseId),
     getAnnouncements(courseId),
+    getCourseMeetings(courseId),
   ]);
   if (!course) notFound();
 
@@ -121,6 +124,8 @@ export default async function CourseHomePage({
       </div>
 
       <div className="space-y-6">
+        <CourseScheduleWidget course={course} meetings={meetings} />
+
         <Widget
           title="To-do"
           icon={<CalendarClock className="h-4 w-4 text-brand-600" />}

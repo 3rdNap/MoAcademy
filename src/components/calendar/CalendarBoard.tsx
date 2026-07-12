@@ -21,8 +21,19 @@ import {
   fetchMyCalendarEvents,
   removeRemoteCalendarEvent,
 } from "@/lib/calendar-db";
+import {
+  fetchMeetingsForCourses,
+  type CourseMeeting,
+} from "@/lib/course-content-db";
+import { getSignedInUserId } from "@/lib/study-guides-db";
 import { formatDateTime } from "@/lib/utils";
 import type { CalendarEvent, Course } from "@/lib/types";
+
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
 
 const typeTone: Record<
   CalendarEvent["type"],
@@ -113,12 +124,78 @@ export function CalendarBoard({
     }
   }
 
+  // ----- Month view state -----
+  const [cursor, setCursor] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [selectedDay, setSelectedDay] = useState<string | null>(null); // yyyy-mm-dd
+
+  // Course meetings (migration 0030): fetched for the signed-in user's real
+  // courses, then expanded into occurrences for the visible range below.
+  // Anonymous demo (seed courses, signed out) is left unchanged.
+  const [meetings, setMeetings] = useState<CourseMeeting[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const userId = await getSignedInUserId();
+      if (!userId || courses.length === 0) return;
+      const rows = await fetchMeetingsForCourses(courses.map((c) => c.id));
+      if (alive) setMeetings(rows);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [courses]);
+
+  // Agenda = next 14 days from today; month = the displayed month.
+  const rangeStart = useMemo(() => {
+    if (view === "month") return new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, [view, cursor]);
+  const rangeEnd = useMemo(() => {
+    if (view === "month") return new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    const d = new Date(rangeStart);
+    d.setDate(d.getDate() + 13);
+    return d;
+  }, [view, cursor, rangeStart]);
+
+  const meetingEvents = useMemo(() => {
+    if (!meetings || meetings.length === 0) return [];
+    const out: { e: CalendarEvent; location: string }[] = [];
+    const day = new Date(rangeStart);
+    while (day <= rangeEnd) {
+      const weekday = day.getDay();
+      for (const m of meetings) {
+        if (m.weekday !== weekday) continue;
+        const course = courses.find((c) => c.id === m.courseKey);
+        const [h, min] = m.startTime.split(":").map(Number);
+        const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, min);
+        out.push({
+          e: {
+            id: `meeting_${m.id}_${dayKey(day)}`,
+            courseId: m.courseKey,
+            title: `${course?.code ?? "Class"} class`,
+            at: at.toISOString(),
+            type: "event",
+          },
+          location: m.location,
+        });
+      }
+      day.setDate(day.getDate() + 1);
+    }
+    return out;
+  }, [meetings, rangeStart, rangeEnd, courses]);
+
   const allEvents = useMemo(
     () => [
-      ...seedEvents.map((e) => ({ e, local: false })),
-      ...personalEvents.map((e) => ({ e, local: true })),
+      ...seedEvents.map((e) => ({ e, local: false, location: "" })),
+      ...personalEvents.map((e) => ({ e, local: true, location: "" })),
+      ...meetingEvents.map((row) => ({ e: row.e, local: false, location: row.location })),
     ],
-    [seedEvents, personalEvents],
+    [seedEvents, personalEvents, meetingEvents],
   );
 
   const grouped = useMemo(() => {
@@ -134,16 +211,6 @@ export function CalendarBoard({
       return acc;
     }, {});
   }, [allEvents]);
-
-  // ----- Month view state -----
-  const [cursor, setCursor] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
-  const [selectedDay, setSelectedDay] = useState<string | null>(null); // yyyy-mm-dd
-
-  const dayKey = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, typeof allEvents>();
@@ -398,7 +465,7 @@ export function CalendarBoard({
                 </div>
               ) : (
                 <div className="card divide-y divide-black/5">
-                  {(eventsByDay.get(selectedDay) ?? []).map(({ e, local }) => {
+                  {(eventsByDay.get(selectedDay) ?? []).map(({ e, local, location }) => {
                     const course = courses.find((c) => c.id === e.courseId);
                     return (
                       <div key={e.id} className="flex items-center gap-3 p-3.5">
@@ -410,6 +477,7 @@ export function CalendarBoard({
                           <p className="text-sm font-medium text-ink">{e.title}</p>
                           <p className="text-xs text-ink-faint">
                             {course?.code ?? "Personal"} · {formatDateTime(e.at)}
+                            {location && ` · ${location}`}
                           </p>
                         </div>
                         <Badge tone={typeTone[e.type]}>
@@ -442,7 +510,7 @@ export function CalendarBoard({
               {day}
             </h2>
             <div className="card divide-y divide-black/5">
-              {list.map(({ e, local }) => {
+              {list.map(({ e, local, location }) => {
                 const course = courses.find((c) => c.id === e.courseId);
                 return (
                   <div
@@ -457,6 +525,7 @@ export function CalendarBoard({
                       <p className="text-sm font-medium text-ink">{e.title}</p>
                       <p className="text-xs text-ink-faint">
                         {course?.code ?? "Personal"} · {formatDateTime(e.at)}
+                        {location && ` · ${location}`}
                       </p>
                     </div>
                     <Badge tone={typeTone[e.type]}>

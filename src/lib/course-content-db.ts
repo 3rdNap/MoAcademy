@@ -522,6 +522,120 @@ export async function saveRemoteSyllabus(
   }
 }
 
+/* --------------------------------- meetings ------------------------------ */
+
+export interface CourseMeeting {
+  id: string;
+  courseKey: string;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  location: string;
+}
+
+interface CourseMeetingRow {
+  id: string;
+  course_key: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  location: string | null;
+}
+
+function mapMeetingRow(r: CourseMeetingRow): CourseMeeting {
+  return {
+    id: r.id,
+    courseKey: r.course_key,
+    weekday: r.weekday,
+    startTime: r.start_time.slice(0, 5),
+    endTime: r.end_time.slice(0, 5),
+    location: r.location ?? "",
+  };
+}
+
+/** Weekly timetable slots for a course (migration 0030) — or null when offline. */
+export async function fetchCourseMeetings(
+  courseKey: string,
+): Promise<CourseMeeting[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("course_meetings")
+      .select("*")
+      .eq("course_key", courseKey)
+      .order("weekday")
+      .order("start_time");
+    if (error || !data) return null;
+    return (data as unknown as CourseMeetingRow[]).map(mapMeetingRow);
+  } catch {
+    return null;
+  }
+}
+
+/** Meetings across several courses at once (calendar), keyed like the above —
+ *  or null when offline. */
+export async function fetchMeetingsForCourses(
+  courseKeys: string[],
+): Promise<CourseMeeting[] | null> {
+  if (courseKeys.length === 0) return [];
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("course_meetings")
+      .select("*")
+      .in("course_key", courseKeys)
+      .order("weekday")
+      .order("start_time");
+    if (error || !data) return null;
+    return (data as unknown as CourseMeetingRow[]).map(mapMeetingRow);
+  } catch {
+    return null;
+  }
+}
+
+/** Add a timetable slot. Null when refused (not a teaching account). */
+export async function addCourseMeeting(
+  courseKey: string,
+  input: { weekday: number; startTime: string; endTime: string; location: string },
+): Promise<CourseMeeting | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("course_meetings")
+      .insert({
+        course_key: courseKey,
+        weekday: input.weekday,
+        start_time: input.startTime,
+        end_time: input.endTime,
+        location: input.location,
+      })
+      .select()
+      .single();
+    if (error || !data) return null;
+    return mapMeetingRow(data as unknown as CourseMeetingRow);
+  } catch {
+    return null;
+  }
+}
+
+export async function removeCourseMeeting(id: string): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from("course_meetings").delete().eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 /** Announcements published in the last `days` across all courses — for the
  * notification bell. Null when offline. */
 export async function fetchRecentRemoteAnnouncements(
