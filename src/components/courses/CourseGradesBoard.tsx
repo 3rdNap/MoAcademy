@@ -20,10 +20,14 @@ import {
   fetchCourseRoster,
   fetchCourseSubmissions,
   fetchMySubmissions,
+  fetchRubrics,
+  fetchRubricScores,
   getSubmissionFileUrl,
   upsertGrade,
+  upsertRubricScore,
   type RemoteSubmission,
   type RosterStudent,
+  type RubricCriterion,
 } from "@/lib/gradebook-db";
 import { formatDate, initialsOf, letterGrade, relativeTime } from "@/lib/utils";
 import type { Assignment, Course } from "@/lib/types";
@@ -174,6 +178,28 @@ function StudentGrades({
     };
   }, [assignments]);
 
+  // Rubric criteria per assignment + this student's own awarded scores (RLS
+  // returns only their rows). Real assignments only; seed ids won't match.
+  const [rubrics, setRubrics] = useState<Record<string, RubricCriterion[]>>({});
+  const [rubricScores, setRubricScores] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let alive = true;
+    fetchRubrics(assignments.map((a) => a.id)).then(async (crit) => {
+      if (!alive || !crit || crit.length === 0) return;
+      const byAssignment: Record<string, RubricCriterion[]> = {};
+      for (const c of crit) (byAssignment[c.assignmentId] ??= []).push(c);
+      setRubrics(byAssignment);
+      const scores = await fetchRubricScores(crit.map((c) => c.id));
+      if (!alive || !scores) return;
+      setRubricScores(
+        Object.fromEntries(scores.map((s) => [s.criterionId, s.points])),
+      );
+    });
+    return () => {
+      alive = false;
+    };
+  }, [assignments]);
+
   function effective(a: Assignment) {
     const sub = mySubs[a.id];
     if (!sub) return { status: a.status, score: a.score };
@@ -230,6 +256,10 @@ function StudentGrades({
             {assignments.map((a) => {
               const e = effective(a);
               const feedback = mySubs[a.id]?.feedback;
+              const criteria = rubrics[a.id] ?? [];
+              const hasBreakdown = criteria.some(
+                (c) => rubricScores[c.id] != null,
+              );
               return (
                 <tr key={a.id} className="hover:bg-surface-subtle">
                   <td className="px-4 py-3 align-top font-medium text-ink">
@@ -241,6 +271,18 @@ function StudentGrades({
                         </span>{" "}
                         {feedback}
                       </p>
+                    )}
+                    {hasBreakdown && (
+                      <div className="mt-1 space-y-0.5 pl-3 text-xs font-normal text-ink-muted">
+                        {criteria.map((c) => (
+                          <p key={c.id} className="flex justify-between gap-3">
+                            <span>{c.description}</span>
+                            <span className="whitespace-nowrap text-ink-faint">
+                              {rubricScores[c.id] ?? 0}/{c.points}
+                            </span>
+                          </p>
+                        ))}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3 align-top text-ink-muted">
@@ -324,6 +366,49 @@ function InstructorGradebook({
     };
   }, [realMode, assignments]);
 
+  // Rubric criteria per assignment + every student's awarded scores (RLS gives
+  // the teaching account the whole roster). Real-mode only; keyed for O(1) reads.
+  const [rubrics, setRubrics] = useState<Record<string, RubricCriterion[]>>({});
+  const [rubricScores, setRubricScores] = useState<Record<string, number>>({});
+  const [pubNote, setPubNote] = useState<string | null>(null);
+  const scoreKey = (cid: string, sid: string) => `${cid}__${sid}`;
+  useEffect(() => {
+    if (!realMode) return;
+    let alive = true;
+    fetchRubrics(assignments.map((a) => a.id)).then(async (crit) => {
+      if (!alive || !crit || crit.length === 0) return;
+      const byAssignment: Record<string, RubricCriterion[]> = {};
+      for (const c of crit) (byAssignment[c.assignmentId] ??= []).push(c);
+      setRubrics(byAssignment);
+      const scores = await fetchRubricScores(crit.map((c) => c.id));
+      if (!alive || !scores) return;
+      setRubricScores(
+        Object.fromEntries(
+          scores.map((s) => [scoreKey(s.criterionId, s.studentId), s.points]),
+        ),
+      );
+    });
+    return () => {
+      alive = false;
+    };
+  }, [realMode, assignments]);
+
+  // Award one criterion for the reviewed student; optimistic, note on refusal.
+  async function setCriterionScore(
+    criterion: RubricCriterion,
+    sid: string,
+    raw: string,
+  ) {
+    const points = Math.max(0, Math.min(criterion.points, Number(raw) || 0));
+    setRubricScores((prev) => ({
+      ...prev,
+      [scoreKey(criterion.id, sid)]: points,
+    }));
+    if (!(await upsertRubricScore(criterion.id, sid, points))) {
+      setPubNote("Couldn't save the rubric score (teaching account required).");
+    }
+  }
+
   function placeholderSub(
     sid: string,
     aid: string,
@@ -398,6 +483,14 @@ function InstructorGradebook({
     ? activeRoster.find((s) => s.id === reviewCell.sid)
     : undefined;
   const reviewSub = reviewCell ? realSubs[cellId(reviewCell.sid, reviewCell.aid)] : undefined;
+  const reviewCriteria = reviewCell ? rubrics[reviewCell.aid] ?? [] : [];
+  const reviewRubricEarned = reviewCell
+    ? reviewCriteria.reduce(
+        (n, c) => n + (rubricScores[scoreKey(c.id, reviewCell.sid)] ?? 0),
+        0,
+      )
+    : 0;
+  const reviewRubricPossible = reviewCriteria.reduce((n, c) => n + c.points, 0);
 
   async function saveReview() {
     if (!reviewCell) return;
@@ -491,6 +584,12 @@ function InstructorGradebook({
       />
 
       {scheme && <p className="mb-4 text-xs text-ink-faint">{scheme}</p>}
+
+      {pubNote && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {pubNote}
+        </p>
+      )}
 
       <div className="card overflow-x-auto">
         <table className="w-full border-collapse text-sm">
@@ -657,6 +756,47 @@ function InstructorGradebook({
             <p className="rounded-lg border border-dashed border-black/15 p-3 text-sm text-ink-faint">
               (No submission yet)
             </p>
+          )}
+          {reviewCriteria.length > 0 && reviewCell && (
+            <div className="space-y-2 rounded-lg border border-black/10 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                  Rubric
+                </span>
+                <span className="text-xs text-ink-faint">
+                  Total: {reviewRubricEarned}/{reviewRubricPossible}
+                </span>
+              </div>
+              {reviewCriteria.map((c) => (
+                <div key={c.id} className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 text-sm text-ink">
+                    {c.description}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={c.points}
+                    value={rubricScores[scoreKey(c.id, reviewCell.sid)] ?? ""}
+                    onChange={(e) =>
+                      setCriterionScore(c, reviewCell.sid, e.target.value)
+                    }
+                    placeholder="—"
+                    className="focus-ring h-9 w-16 rounded-lg border border-black/10 bg-surface px-2 text-center text-sm text-ink placeholder:text-ink-faint"
+                    aria-label={`${c.description} — points`}
+                  />
+                  <span className="whitespace-nowrap text-xs text-ink-faint">
+                    /{c.points}
+                  </span>
+                </div>
+              ))}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setReviewScore(String(reviewRubricEarned))}
+              >
+                Use as score
+              </Button>
+            </div>
           )}
           <Field label={`Score (out of ${reviewAssignment?.points ?? 0})`}>
             <Input

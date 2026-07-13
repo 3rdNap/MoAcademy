@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Paperclip, Pencil, Plus, Send, Trash2, Upload } from "lucide-react";
+import {
+  ListChecks,
+  Paperclip,
+  Pencil,
+  Plus,
+  Send,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -24,11 +32,16 @@ import {
 } from "@/lib/course-content-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
 import {
+  addRubricCriterion,
   fetchMySubmissions,
+  fetchRubrics,
   getSubmissionFileUrl,
+  removeRubricCriterion,
+  updateRubricCriterion,
   uploadSubmissionFile,
   upsertMySubmission,
   type RemoteSubmission,
+  type RubricCriterion,
 } from "@/lib/gradebook-db";
 import { itemIcon } from "@/lib/itemMeta";
 import { formatDateTime, relativeTime } from "@/lib/utils";
@@ -187,6 +200,72 @@ export function CourseAssignmentsBoard({
       alive = false;
     };
   }, [remote]);
+
+  // Rubrics for the shared assignments, keyed by assignment id. Real-mode only.
+  const [rubrics, setRubrics] = useState<Record<string, RubricCriterion[]>>({});
+  useEffect(() => {
+    if (!remote || remote.length === 0) return;
+    let alive = true;
+    fetchRubrics(remote.map((a) => a.id)).then((crit) => {
+      if (!alive || !crit) return;
+      const byAssignment: Record<string, RubricCriterion[]> = {};
+      for (const c of crit) (byAssignment[c.assignmentId] ??= []).push(c);
+      setRubrics(byAssignment);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [remote]);
+
+  // Manage-rubric modal (teaching accounts, real signed-in mode only).
+  const [rubricFor, setRubricFor] = useState<Assignment | null>(null);
+  const [newCritDesc, setNewCritDesc] = useState("");
+  const [newCritPoints, setNewCritPoints] = useState(10);
+  const rubricList = rubricFor ? rubrics[rubricFor.id] ?? [] : [];
+  const rubricTotal = rubricList.reduce((n, c) => n + c.points, 0);
+
+  async function addCriterion() {
+    if (!rubricFor) return;
+    const description = newCritDesc.trim();
+    if (!description) return;
+    const created = await addRubricCriterion(rubricFor.id, {
+      description,
+      points: Math.max(0, newCritPoints),
+      position: rubricList.length,
+    });
+    if (created) {
+      setRubrics((prev) => ({
+        ...prev,
+        [rubricFor.id]: [...(prev[rubricFor.id] ?? []), created],
+      }));
+      setNewCritDesc("");
+      setNewCritPoints(10);
+    } else {
+      setPubNote("Couldn't add the criterion (teaching account required).");
+    }
+  }
+
+  // Persist an edited criterion field; optimistic state updated by the caller.
+  async function persistCriterion(
+    id: string,
+    patch: { description?: string; points?: number },
+  ) {
+    if (!(await updateRubricCriterion(id, patch))) {
+      setPubNote("Couldn't save the rubric change (teaching account required).");
+    }
+  }
+
+  async function deleteCriterion(id: string) {
+    if (!rubricFor) return;
+    if (await removeRubricCriterion(id)) {
+      setRubrics((prev) => ({
+        ...prev,
+        [rubricFor.id]: (prev[rubricFor.id] ?? []).filter((c) => c.id !== id),
+      }));
+    } else {
+      setPubNote("Couldn't delete the criterion (teaching account required).");
+    }
+  }
 
   /** "Draft with Mo": generate the student-facing description server-side. */
   async function draftWithMo() {
@@ -488,6 +567,11 @@ export function CourseAssignmentsBoard({
                     </span>
                   )}
                 </p>
+                {(rubrics[a.id]?.length ?? 0) > 0 && (
+                  <p className="mt-1 text-xs text-ink-faint">
+                    Rubric · {rubrics[a.id]!.length} criteria
+                  </p>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {(() => {
@@ -518,6 +602,15 @@ export function CourseAssignmentsBoard({
                 {teaching &&
                   (source === "local" || (source === "remote" && signedIn)) && (
                   <div className="flex gap-1">
+                    {source === "remote" && (
+                      <button
+                        onClick={() => setRubricFor(a)}
+                        className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-surface-sunken hover:text-ink"
+                        aria-label="Manage rubric"
+                      >
+                        <ListChecks className="h-4 w-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => openEdit(a)}
                       className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-surface-sunken hover:text-ink"
@@ -800,6 +893,108 @@ export function CourseAssignmentsBoard({
                 {" "}
                 Canvas normalizes when this isn&apos;t 100% — ungrouped work
                 fills any remainder.
+              </span>
+            )}
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={rubricFor !== null}
+        onClose={() => setRubricFor(null)}
+        title={`Rubric · ${rubricFor?.title ?? ""}`}
+        description="Break the grade into criteria students see alongside their score."
+        footer={<Button onClick={() => setRubricFor(null)}>Done</Button>}
+      >
+        <div className="space-y-4">
+          {rubricList.length === 0 && (
+            <p className="text-sm text-ink-faint">
+              No criteria yet — add one below to build the rubric.
+            </p>
+          )}
+          {rubricList.map((c) => (
+            <div key={c.id} className="flex items-end gap-2">
+              <Field label="Criterion" className="flex-1">
+                <Input
+                  value={c.description}
+                  onChange={(e) =>
+                    setRubrics((prev) => ({
+                      ...prev,
+                      [c.assignmentId]: (prev[c.assignmentId] ?? []).map((x) =>
+                        x.id === c.id
+                          ? { ...x, description: e.target.value }
+                          : x,
+                      ),
+                    }))
+                  }
+                  onBlur={() =>
+                    persistCriterion(c.id, { description: c.description.trim() })
+                  }
+                />
+              </Field>
+              <Field label="Points" className="w-24">
+                <Input
+                  type="number"
+                  min={0}
+                  value={c.points}
+                  onChange={(e) => {
+                    const points = Math.max(0, Number(e.target.value) || 0);
+                    setRubrics((prev) => ({
+                      ...prev,
+                      [c.assignmentId]: (prev[c.assignmentId] ?? []).map((x) =>
+                        x.id === c.id ? { ...x, points } : x,
+                      ),
+                    }));
+                  }}
+                  onBlur={() => persistCriterion(c.id, { points: c.points })}
+                />
+              </Field>
+              <button
+                type="button"
+                onClick={() => deleteCriterion(c.id)}
+                className="focus-ring mb-1 rounded-md p-2 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
+                aria-label="Delete criterion"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+
+          <div className="flex items-end gap-2 border-t border-black/5 pt-4">
+            <Field label="Add criterion" className="flex-1">
+              <Input
+                value={newCritDesc}
+                onChange={(e) => setNewCritDesc(e.target.value)}
+                placeholder="e.g. Clarity of argument"
+              />
+            </Field>
+            <Field label="Points" className="w-24">
+              <Input
+                type="number"
+                min={0}
+                value={newCritPoints}
+                onChange={(e) =>
+                  setNewCritPoints(Math.max(0, Number(e.target.value) || 0))
+                }
+              />
+            </Field>
+            <Button
+              className="mb-0.5"
+              onClick={addCriterion}
+              disabled={!newCritDesc.trim()}
+            >
+              <Plus className="h-4 w-4" /> Add
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-faint">
+            Rubric total: {rubricTotal} pts (assignment is worth{" "}
+            {rubricFor?.points ?? 0}).
+            {rubricFor && rubricTotal !== rubricFor.points && (
+              <span className="text-amber-700 dark:text-amber-400">
+                {" "}
+                These differ — criteria don&apos;t have to sum to the assignment
+                points, but they usually do.
               </span>
             )}
           </p>
