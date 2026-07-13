@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  Check,
+  HelpCircle,
   ListChecks,
   Paperclip,
   Pencil,
@@ -9,6 +11,7 @@ import {
   Send,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
@@ -43,6 +46,17 @@ import {
   type RemoteSubmission,
   type RubricCriterion,
 } from "@/lib/gradebook-db";
+import {
+  addQuizQuestion,
+  fetchAnswerKeys,
+  fetchMyAttempts,
+  fetchQuizQuestions,
+  removeQuizQuestion,
+  submitQuizAttempt,
+  updateQuizQuestion,
+  type QuizAttempt,
+  type QuizQuestion,
+} from "@/lib/quiz-db";
 import { itemIcon } from "@/lib/itemMeta";
 import { formatDateTime, relativeTime } from "@/lib/utils";
 import type { Assignment, Course, SubmissionStatus } from "@/lib/types";
@@ -216,6 +230,210 @@ export function CourseAssignmentsBoard({
       alive = false;
     };
   }, [remote]);
+
+  // Quiz questions for the shared assignments, keyed by assignment id. Answer
+  // keys (question id → correct index) load only for teaching accounts; null
+  // means "not available" (RLS hides them from students). Real-mode only.
+  const [questions, setQuestions] = useState<Record<string, QuizQuestion[]>>(
+    {},
+  );
+  const [answerKeys, setAnswerKeys] = useState<Record<string, number> | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!remote || remote.length === 0) return;
+    let alive = true;
+    fetchQuizQuestions(remote.map((a) => a.id)).then((qs) => {
+      if (!alive || !qs) return;
+      const byAssignment: Record<string, QuizQuestion[]> = {};
+      for (const q of qs) (byAssignment[q.assignmentId] ??= []).push(q);
+      setQuestions(byAssignment);
+      if (teaching && qs.length > 0) {
+        fetchAnswerKeys(qs.map((q) => q.id)).then(
+          (keys) => alive && setAnswerKeys(keys),
+        );
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [remote, teaching]);
+
+  // My own quiz attempts (one per assignment), keyed by assignment id. Drives
+  // the student-side Take/Review action for quiz rows. Real signed-in only.
+  const [attempts, setAttempts] = useState<Record<string, QuizAttempt>>({});
+  useEffect(() => {
+    if (!remote || remote.length === 0 || !signedIn) return;
+    let alive = true;
+    fetchMyAttempts(remote.map((a) => a.id)).then((list) => {
+      if (!alive || !list) return;
+      setAttempts(Object.fromEntries(list.map((at) => [at.assignmentId, at])));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [remote, signedIn]);
+
+  // A remote quiz assignment that actually has questions — the only rows that
+  // get the take-quiz flow (a quiz without questions is a generic assignment).
+  const isTakeableQuiz = (a: Assignment) =>
+    a.type === "quiz" &&
+    Boolean(remote?.some((x) => x.id === a.id)) &&
+    (questions[a.id]?.length ?? 0) > 0;
+
+  // Take/review-quiz modal (students). takeReview = read-only past attempt;
+  // takeResult holds the just-submitted grade breakdown.
+  const [takeFor, setTakeFor] = useState<Assignment | null>(null);
+  const [takeAnswers, setTakeAnswers] = useState<Record<string, number>>({});
+  const [takeResult, setTakeResult] = useState<{
+    earned: number;
+    total: number;
+    score: number;
+    points: number;
+    correct: string[];
+  } | null>(null);
+  const [takeReview, setTakeReview] = useState(false);
+  const [takeBusy, setTakeBusy] = useState(false);
+  const takeQuestions = takeFor ? questions[takeFor.id] ?? [] : [];
+  const takeUnanswered = takeQuestions.filter(
+    (q) => takeAnswers[q.id] === undefined,
+  ).length;
+  const correctSet = takeResult ? new Set(takeResult.correct) : null;
+
+  function openTakeQuiz(a: Assignment) {
+    setTakeFor(a);
+    setTakeAnswers({});
+    setTakeResult(null);
+    setTakeReview(false);
+    setTakeBusy(false);
+  }
+
+  function openReviewQuiz(a: Assignment) {
+    setTakeFor(a);
+    setTakeAnswers(attempts[a.id]?.answers ?? {});
+    setTakeResult(null);
+    setTakeReview(true);
+    setTakeBusy(false);
+  }
+
+  function resetTake() {
+    setTakeFor(null);
+    setTakeAnswers({});
+    setTakeResult(null);
+    setTakeReview(false);
+    setTakeBusy(false);
+  }
+
+  async function submitQuiz() {
+    if (!takeFor || takeBusy) return;
+    setTakeBusy(true);
+    const result = await submitQuizAttempt(takeFor.id, takeAnswers);
+    setTakeBusy(false);
+    if (!result) {
+      setPubNote("Couldn't submit the quiz — try again.");
+      return;
+    }
+    setTakeResult(result);
+    // The RPC recorded the attempt and upserted a graded submission; mirror both
+    // locally so the row shows Graded + score without a refetch.
+    const aid = takeFor.id;
+    setAttempts((prev) => ({
+      ...prev,
+      [aid]: {
+        id: prev[aid]?.id ?? aid,
+        assignmentId: aid,
+        studentId: prev[aid]?.studentId ?? "",
+        submittedAt: new Date().toISOString(),
+        score: result.earned,
+        total: result.total,
+        answers: takeAnswers,
+      },
+    }));
+    setMySubs((prev) => ({
+      ...prev,
+      [aid]: {
+        ...prev[aid],
+        assignmentId: aid,
+        userId: prev[aid]?.userId ?? "",
+        body: prev[aid]?.body ?? "",
+        status: "graded",
+        score: result.score,
+      },
+    }));
+  }
+
+  // Manage-quiz modal (teaching accounts, real signed-in mode only).
+  const [quizFor, setQuizFor] = useState<Assignment | null>(null);
+  const [newQPrompt, setNewQPrompt] = useState("");
+  const [newQOptions, setNewQOptions] = useState<string[]>(["", "", "", ""]);
+  const [newQCorrect, setNewQCorrect] = useState(0);
+  const [newQPoints, setNewQPoints] = useState(1);
+  const quizList = quizFor ? questions[quizFor.id] ?? [] : [];
+  const quizTotal = quizList.reduce((n, q) => n + q.points, 0);
+  const keysUnavailable = answerKeys === null;
+
+  function resetQuizForm() {
+    setNewQPrompt("");
+    setNewQOptions(["", "", "", ""]);
+    setNewQCorrect(0);
+    setNewQPoints(1);
+  }
+
+  async function addQuestion() {
+    if (!quizFor) return;
+    const prompt = newQPrompt.trim();
+    const options = newQOptions.map((o) => o.trim());
+    if (!prompt || options.some((o) => !o)) return;
+    const created = await addQuizQuestion(quizFor.id, {
+      prompt,
+      options,
+      correctIndex: Math.min(newQCorrect, options.length - 1),
+      points: Math.max(1, newQPoints),
+      position: quizList.length,
+    });
+    if (created) {
+      setQuestions((prev) => ({
+        ...prev,
+        [quizFor.id]: [...(prev[quizFor.id] ?? []), created],
+      }));
+      setAnswerKeys((prev) => ({
+        ...(prev ?? {}),
+        [created.id]: Math.min(newQCorrect, options.length - 1),
+      }));
+      resetQuizForm();
+    } else {
+      setPubNote("Couldn't add the question (teaching account required).");
+    }
+  }
+
+  // Persist an edited question field; optimistic state updated by the caller.
+  async function persistQuestion(
+    id: string,
+    patch: { prompt?: string; options?: string[]; points?: number },
+  ) {
+    if (!(await updateQuizQuestion(id, patch))) {
+      setPubNote("Couldn't save the question change (teaching account required).");
+    }
+  }
+
+  async function setCorrect(questionId: string, index: number) {
+    setAnswerKeys((prev) => ({ ...(prev ?? {}), [questionId]: index }));
+    if (!(await updateQuizQuestion(questionId, { correctIndex: index }))) {
+      setPubNote("Couldn't save the correct answer (teaching account required).");
+    }
+  }
+
+  async function deleteQuestion(id: string) {
+    if (!quizFor) return;
+    if (await removeQuizQuestion(id)) {
+      setQuestions((prev) => ({
+        ...prev,
+        [quizFor.id]: (prev[quizFor.id] ?? []).filter((q) => q.id !== id),
+      }));
+    } else {
+      setPubNote("Couldn't delete the question (teaching account required).");
+    }
+  }
 
   // Manage-rubric modal (teaching accounts, real signed-in mode only).
   const [rubricFor, setRubricFor] = useState<Assignment | null>(null);
@@ -572,6 +790,11 @@ export function CourseAssignmentsBoard({
                     Rubric · {rubrics[a.id]!.length} criteria
                   </p>
                 )}
+                {a.type === "quiz" && (questions[a.id]?.length ?? 0) > 0 && (
+                  <p className="mt-1 text-xs text-ink-faint">
+                    Quiz · {questions[a.id]!.length} questions
+                  </p>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {(() => {
@@ -590,18 +813,44 @@ export function CourseAssignmentsBoard({
                     <p className="text-sm text-ink-faint">—/{a.points}</p>
                   );
                 })()}
-                {!teaching && status !== "graded" && (
-                  <Button
-                    size="sm"
-                    variant={sub ? "outline" : "primary"}
-                    onClick={() => openSubmit(a)}
-                  >
-                    {sub ? "Resubmit" : "Submit"}
-                  </Button>
-                )}
+                {!teaching &&
+                  (isTakeableQuiz(a) ? (
+                    attempts[a.id] ? (
+                      <button
+                        type="button"
+                        onClick={() => openReviewQuiz(a)}
+                        className="focus-ring rounded-md px-2 py-1 text-sm font-medium text-brand-600 hover:text-brand-700"
+                      >
+                        Review quiz
+                      </button>
+                    ) : (
+                      <Button size="sm" onClick={() => openTakeQuiz(a)}>
+                        Take quiz
+                      </Button>
+                    )
+                  ) : (
+                    status !== "graded" && (
+                      <Button
+                        size="sm"
+                        variant={sub ? "outline" : "primary"}
+                        onClick={() => openSubmit(a)}
+                      >
+                        {sub ? "Resubmit" : "Submit"}
+                      </Button>
+                    )
+                  ))}
                 {teaching &&
                   (source === "local" || (source === "remote" && signedIn)) && (
                   <div className="flex gap-1">
+                    {source === "remote" && a.type === "quiz" && (
+                      <button
+                        onClick={() => setQuizFor(a)}
+                        className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-surface-sunken hover:text-ink"
+                        aria-label="Manage quiz questions"
+                      >
+                        <HelpCircle className="h-4 w-4" />
+                      </button>
+                    )}
                     {source === "remote" && (
                       <button
                         onClick={() => setRubricFor(a)}
@@ -998,6 +1247,326 @@ export function CourseAssignmentsBoard({
               </span>
             )}
           </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={quizFor !== null}
+        onClose={() => {
+          setQuizFor(null);
+          resetQuizForm();
+        }}
+        title={`Quiz questions · ${quizFor?.title ?? ""}`}
+        description="Author multiple-choice questions. Students take one auto-graded attempt."
+        footer={
+          <Button
+            onClick={() => {
+              setQuizFor(null);
+              resetQuizForm();
+            }}
+          >
+            Done
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          {keysUnavailable && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+              Answer keys are unavailable — the correct answer can&apos;t be
+              shown or changed here.
+            </p>
+          )}
+          {quizList.length === 0 && (
+            <p className="text-sm text-ink-faint">
+              No questions yet — add one below to build the quiz.
+            </p>
+          )}
+          {quizList.map((q, qi) => (
+            <div
+              key={q.id}
+              className="space-y-3 rounded-lg border border-black/5 p-3"
+            >
+              <div className="flex items-start gap-2">
+                <Field label={`Question ${qi + 1}`} className="flex-1">
+                  <Textarea
+                    value={q.prompt}
+                    onChange={(e) =>
+                      setQuestions((prev) => ({
+                        ...prev,
+                        [q.assignmentId]: (prev[q.assignmentId] ?? []).map((x) =>
+                          x.id === q.id ? { ...x, prompt: e.target.value } : x,
+                        ),
+                      }))
+                    }
+                    onBlur={() =>
+                      persistQuestion(q.id, { prompt: q.prompt.trim() })
+                    }
+                    className="min-h-[60px]"
+                  />
+                </Field>
+                <Field label="Points" className="w-20">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={q.points}
+                    onChange={(e) => {
+                      const points = Math.max(1, Number(e.target.value) || 1);
+                      setQuestions((prev) => ({
+                        ...prev,
+                        [q.assignmentId]: (prev[q.assignmentId] ?? []).map((x) =>
+                          x.id === q.id ? { ...x, points } : x,
+                        ),
+                      }));
+                    }}
+                    onBlur={() => persistQuestion(q.id, { points: q.points })}
+                  />
+                </Field>
+                <button
+                  type="button"
+                  onClick={() => deleteQuestion(q.id)}
+                  className="focus-ring mt-6 rounded-md p-2 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
+                  aria-label="Delete question"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="space-y-1.5">
+                {q.options.map((opt, oi) => (
+                  <label
+                    key={oi}
+                    className="flex items-center gap-2 text-sm text-ink"
+                  >
+                    <input
+                      type="radio"
+                      name={`correct-${q.id}`}
+                      className="focus-ring"
+                      checked={!keysUnavailable && answerKeys?.[q.id] === oi}
+                      disabled={keysUnavailable}
+                      onChange={() => setCorrect(q.id, oi)}
+                    />
+                    <Input
+                      value={opt}
+                      onChange={(e) =>
+                        setQuestions((prev) => ({
+                          ...prev,
+                          [q.assignmentId]: (prev[q.assignmentId] ?? []).map(
+                            (x) =>
+                              x.id === q.id
+                                ? {
+                                    ...x,
+                                    options: x.options.map((o, i) =>
+                                      i === oi ? e.target.value : o,
+                                    ),
+                                  }
+                                : x,
+                          ),
+                        }))
+                      }
+                      onBlur={() =>
+                        persistQuestion(q.id, {
+                          options: q.options.map((o) => o.trim()),
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div className="space-y-3 border-t border-black/5 pt-4">
+            <Field label="Add question">
+              <Textarea
+                value={newQPrompt}
+                onChange={(e) => setNewQPrompt(e.target.value)}
+                placeholder="e.g. What is the derivative of x²?"
+                className="min-h-[60px]"
+              />
+            </Field>
+            <div className="space-y-1.5">
+              {newQOptions.map((opt, oi) => (
+                <div key={oi} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="new-correct"
+                    className="focus-ring"
+                    checked={newQCorrect === oi}
+                    onChange={() => setNewQCorrect(oi)}
+                    aria-label={`Mark option ${oi + 1} correct`}
+                  />
+                  <Input
+                    value={opt}
+                    onChange={(e) =>
+                      setNewQOptions((prev) =>
+                        prev.map((o, i) => (i === oi ? e.target.value : o)),
+                      )
+                    }
+                    placeholder={`Option ${oi + 1}`}
+                    className="flex-1"
+                  />
+                  {newQOptions.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewQOptions((prev) =>
+                          prev.filter((_, i) => i !== oi),
+                        );
+                        // Keep the correct marker valid after removal.
+                        setNewQCorrect((c) =>
+                          oi < c ? c - 1 : Math.min(c, newQOptions.length - 2),
+                        );
+                      }}
+                      className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
+                      aria-label={`Remove option ${oi + 1}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex items-end gap-2">
+              {newQOptions.length < 6 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setNewQOptions((prev) => [...prev, ""])}
+                >
+                  <Plus className="h-4 w-4" /> Option
+                </Button>
+              )}
+              <Field label="Points" className="w-20">
+                <Input
+                  type="number"
+                  min={1}
+                  value={newQPoints}
+                  onChange={(e) =>
+                    setNewQPoints(Math.max(1, Number(e.target.value) || 1))
+                  }
+                />
+              </Field>
+              <Button
+                className="mb-0.5"
+                onClick={addQuestion}
+                disabled={
+                  !newQPrompt.trim() ||
+                  newQOptions.some((o) => !o.trim())
+                }
+              >
+                <Plus className="h-4 w-4" /> Add question
+              </Button>
+            </div>
+          </div>
+
+          <p className="text-xs text-ink-faint">
+            {quizList.length} questions · {quizTotal} pts total · auto-graded out
+            of {quizFor?.points ?? 0}.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={takeFor !== null}
+        onClose={resetTake}
+        title={`${takeReview ? "Review" : "Quiz"} · ${takeFor?.title ?? ""}`}
+        description={
+          takeFor
+            ? `${takeQuestions.length} questions · ${takeFor.points} pts`
+            : undefined
+        }
+        footer={
+          takeResult || takeReview ? (
+            <Button onClick={resetTake}>Done</Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={resetTake}>
+                Cancel
+              </Button>
+              <Button onClick={submitQuiz} disabled={takeBusy}>
+                <Send className="h-4 w-4" />
+                {takeBusy
+                  ? "Submitting…"
+                  : takeUnanswered > 0
+                    ? `Submit with ${takeUnanswered} unanswered`
+                    : "Submit quiz"}
+              </Button>
+            </>
+          )
+        }
+      >
+        <div className="space-y-5">
+          {takeResult && (
+            <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
+              Score: {takeResult.earned}/{takeResult.total} ·{" "}
+              {takeResult.score}/{takeResult.points} pts
+            </div>
+          )}
+          {takeReview && (
+            <p className="text-xs text-ink-faint">
+              Answer key isn&apos;t shown after submission.
+            </p>
+          )}
+          {takeQuestions.map((q, qi) => {
+            const chosen = takeAnswers[q.id];
+            const isCorrect = correctSet?.has(q.id);
+            const locked = takeResult !== null || takeReview;
+            return (
+              <div
+                key={q.id}
+                className="space-y-2 rounded-lg border border-black/5 p-3"
+              >
+                <div className="flex items-start gap-2">
+                  {takeResult &&
+                    (isCorrect ? (
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    ) : (
+                      <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                    ))}
+                  <p className="flex-1 text-sm font-medium text-ink">
+                    {qi + 1}. {q.prompt}
+                    <span className="ml-1 font-normal text-ink-faint">
+                      ({q.points} pts)
+                    </span>
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  {q.options.map((opt, oi) => {
+                    const picked = chosen === oi;
+                    return (
+                      <label
+                        key={oi}
+                        className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm ${
+                          picked
+                            ? "bg-brand-50 text-ink dark:bg-brand-500/10"
+                            : "text-ink-muted"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`take-${q.id}`}
+                          className="focus-ring"
+                          checked={picked}
+                          disabled={locked}
+                          onChange={() =>
+                            setTakeAnswers((prev) => ({ ...prev, [q.id]: oi }))
+                          }
+                        />
+                        {opt}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {!takeResult && !takeReview && (
+            <p className="text-xs text-ink-faint">
+              {takeUnanswered > 0
+                ? `${takeUnanswered} of ${takeQuestions.length} unanswered.`
+                : "All questions answered."}{" "}
+              You get one attempt — it&apos;s graded automatically.
+            </p>
+          )}
         </div>
       </Modal>
     </>

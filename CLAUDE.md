@@ -114,7 +114,14 @@ The app runs as an institution, not a self-service signup:
   `private.teaches_course`; students/guardians read their own) and weekly
   `course_meetings` slots surfaced on the course home and expanded into
   calendar occurrences client-side.
-- All migrations through **0030** are applied to the live Supabase project
+- **Rubrics + structured quizzes** (0031/0032): point-valued rubric criteria
+  with per-student awards; MCQ quizzes whose answer keys live in a
+  teacher-only table and whose grading happens in the
+  `submit_quiz_attempt` SECURITY DEFINER RPC (one attempt per student,
+  score scaled to assignment points, lands as a graded submission via a
+  transaction-local guard escape). The submissions field guard covers
+  INSERT as well as UPDATE.
+- All migrations through **0032** are applied to the live Supabase project
   (incl. the private `submissions` storage bucket — signed-URL reads for the
   owner or the assignment's teaching accounts). Admin console can reset a
   forgotten password (`/api/admin/reset-password`, service-role); the new
