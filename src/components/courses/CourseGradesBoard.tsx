@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, MessageSquareText, Paperclip } from "lucide-react";
+import { Check, Download, MessageSquareText, Paperclip, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
@@ -29,6 +29,13 @@ import {
   type RosterStudent,
   type RubricCriterion,
 } from "@/lib/gradebook-db";
+import {
+  fetchAnswerKeys,
+  fetchAttemptsForAssignments,
+  fetchQuizQuestions,
+  type QuizAttempt,
+  type QuizQuestion,
+} from "@/lib/quiz-db";
 import { formatDate, initialsOf, letterGrade, relativeTime } from "@/lib/utils";
 import type { Assignment, Course } from "@/lib/types";
 
@@ -393,6 +400,38 @@ function InstructorGradebook({
     };
   }, [realMode, assignments]);
 
+  // Quiz attempts keyed by `${studentId}__${assignmentId}`, the quiz questions
+  // per assignment, and answer keys (question id → correct index). Teachers can
+  // read keys, so the review modal marks each answer correct/incorrect.
+  const [attempts, setAttempts] = useState<Record<string, QuizAttempt>>({});
+  const [questions, setQuestions] = useState<Record<string, QuizQuestion[]>>({});
+  const [answerKeys, setAnswerKeys] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!realMode) return;
+    let alive = true;
+    const ids = assignments.map((a) => a.id);
+    fetchAttemptsForAssignments(ids).then((list) => {
+      if (!alive || !list) return;
+      setAttempts(
+        Object.fromEntries(
+          list.map((at) => [cellId(at.studentId, at.assignmentId), at]),
+        ),
+      );
+    });
+    fetchQuizQuestions(ids).then((qs) => {
+      if (!alive || !qs) return;
+      const byAssignment: Record<string, QuizQuestion[]> = {};
+      for (const q of qs) (byAssignment[q.assignmentId] ??= []).push(q);
+      setQuestions(byAssignment);
+      fetchAnswerKeys(qs.map((q) => q.id)).then(
+        (keys) => alive && keys && setAnswerKeys(keys),
+      );
+    });
+    return () => {
+      alive = false;
+    };
+  }, [realMode, assignments]);
+
   // Award one criterion for the reviewed student; optimistic, note on refusal.
   async function setCriterionScore(
     criterion: RubricCriterion,
@@ -491,6 +530,10 @@ function InstructorGradebook({
       )
     : 0;
   const reviewRubricPossible = reviewCriteria.reduce((n, c) => n + c.points, 0);
+  const reviewAttempt = reviewCell
+    ? attempts[cellId(reviewCell.sid, reviewCell.aid)]
+    : undefined;
+  const reviewQuestions = reviewCell ? questions[reviewCell.aid] ?? [] : [];
 
   async function saveReview() {
     if (!reviewCell) return;
@@ -756,6 +799,45 @@ function InstructorGradebook({
             <p className="rounded-lg border border-dashed border-black/15 p-3 text-sm text-ink-faint">
               (No submission yet)
             </p>
+          )}
+          {reviewAttempt && reviewQuestions.length > 0 && (
+            <div className="space-y-3 rounded-lg border border-black/10 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                  Quiz attempt
+                </span>
+                <span className="text-xs text-ink-faint">
+                  {reviewAttempt.score}/{reviewAttempt.total}
+                  {reviewAttempt.submittedAt
+                    ? ` · ${relativeTime(reviewAttempt.submittedAt)}`
+                    : ""}
+                </span>
+              </div>
+              {reviewQuestions.map((q, qi) => {
+                const chosen = reviewAttempt.answers[q.id];
+                const key = answerKeys[q.id];
+                const isCorrect = key !== undefined && chosen === key;
+                return (
+                  <div key={q.id} className="flex items-start gap-2 text-sm">
+                    {isCorrect ? (
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    ) : (
+                      <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-ink">
+                        {qi + 1}. {q.prompt}
+                      </p>
+                      <p className="text-ink-muted">
+                        {chosen !== undefined
+                          ? q.options[chosen] ?? "—"
+                          : "(no answer)"}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
           {reviewCriteria.length > 0 && reviewCell && (
             <div className="space-y-2 rounded-lg border border-black/10 p-3">
