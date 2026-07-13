@@ -5,12 +5,14 @@ import { Widget } from "@/components/ui/Widget";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CourseScheduleWidget } from "@/components/courses/CourseScheduleWidget";
+import { OfficeHoursWidget } from "@/components/courses/OfficeHoursWidget";
 import { itemIcon } from "@/lib/itemMeta";
 import {
   getAnnouncements,
   getAssignments,
   getCourse,
   getCourseMeetings,
+  getCourseOfficeHours,
   getModules,
 } from "@/lib/data";
 import { daysUntil, formatDateTime, relativeTime } from "@/lib/utils";
@@ -21,13 +23,15 @@ export default async function CourseHomePage({
   params: Promise<{ courseId: string }>;
 }) {
   const { courseId } = await params;
-  const [course, modules, assignments, announcements, meetings] = await Promise.all([
-    getCourse(courseId),
-    getModules(courseId),
-    getAssignments(courseId),
-    getAnnouncements(courseId),
-    getCourseMeetings(courseId),
-  ]);
+  const [course, modules, assignments, announcements, meetings, officeHours] =
+    await Promise.all([
+      getCourse(courseId),
+      getModules(courseId),
+      getAssignments(courseId),
+      getAnnouncements(courseId),
+      getCourseMeetings(courseId),
+      getCourseOfficeHours(courseId),
+    ]);
   if (!course) notFound();
 
   const todo = assignments
@@ -125,6 +129,8 @@ export default async function CourseHomePage({
 
       <div className="space-y-6">
         <CourseScheduleWidget course={course} meetings={meetings} />
+
+        <OfficeHoursWidget course={course} slots={officeHours} />
 
         <Widget
           title="To-do"
