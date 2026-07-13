@@ -812,6 +812,65 @@ export async function getCourseMeetings(courseId: string): Promise<CourseMeeting
   }
 }
 
+// Office hours (migration 0033). Shape mirrors src/lib/office-hours-db.ts;
+// kept in sync by hand since the two modules use different Supabase clients.
+export interface OfficeHourSlot {
+  id: string;
+  instructorId: string;
+  courseKey: string;
+  startsAt: string;
+  endsAt: string;
+  location: string;
+  bookedBy?: string;
+  bookedAt?: string;
+}
+
+interface RawOfficeHourSlot {
+  id: string;
+  instructor_id: string;
+  course_key: string;
+  starts_at: string;
+  ends_at: string;
+  location: string | null;
+  booked_by: string | null;
+  booked_at: string | null;
+}
+
+function mapOfficeHour(r: RawOfficeHourSlot): OfficeHourSlot {
+  return {
+    id: r.id,
+    instructorId: r.instructor_id,
+    courseKey: r.course_key,
+    startsAt: r.starts_at,
+    endsAt: r.ends_at,
+    location: r.location ?? "",
+    bookedBy: r.booked_by ?? undefined,
+    bookedAt: r.booked_at ?? undefined,
+  };
+}
+
+/** Future-or-recent office-hour slots for a course, soonest first, for the
+ *  course-home initial render. [] on error/offline — RLS also means anonymous
+ *  visitors get [], which the widget treats as "nothing to show". */
+export async function getCourseOfficeHours(
+  courseId: string,
+): Promise<OfficeHourSlot[]> {
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const since = new Date(Date.now() - 86400000).toISOString();
+    const { data } = await supabase
+      .from("office_hour_slots")
+      .select("*")
+      .eq("course_key", courseId)
+      .gte("starts_at", since)
+      .order("starts_at");
+    return (data ?? []).map((r) => mapOfficeHour(r as unknown as RawOfficeHourSlot));
+  } catch {
+    return [];
+  }
+}
+
 export const getModules = cache(async (courseId: string): Promise<CourseModule[]> => {
   const { authed } = await getAuthState();
   // Seed modules are demo-only; signed-in users see just real content.

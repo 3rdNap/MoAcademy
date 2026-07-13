@@ -25,6 +25,10 @@ import {
   fetchMeetingsForCourses,
   type CourseMeeting,
 } from "@/lib/course-content-db";
+import {
+  fetchMyBookedOfficeHours,
+  type OfficeHourSlot,
+} from "@/lib/office-hours-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
 import { formatDateTime } from "@/lib/utils";
 import type { CalendarEvent, Course } from "@/lib/types";
@@ -135,6 +139,9 @@ export function CalendarBoard({
   // courses, then expanded into occurrences for the visible range below.
   // Anonymous demo (seed courses, signed out) is left unchanged.
   const [meetings, setMeetings] = useState<CourseMeeting[] | null>(null);
+  // Office hours I've booked or (as instructor) own (migration 0033). Signed-in
+  // only, same gating as meetings; timestamped rows, no occurrence expansion.
+  const [officeHours, setOfficeHours] = useState<OfficeHourSlot[] | null>(null);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -142,6 +149,8 @@ export function CalendarBoard({
       if (!userId || courses.length === 0) return;
       const rows = await fetchMeetingsForCourses(courses.map((c) => c.id));
       if (alive) setMeetings(rows);
+      const oh = await fetchMyBookedOfficeHours();
+      if (alive) setOfficeHours(oh);
     })();
     return () => {
       alive = false;
@@ -189,13 +198,32 @@ export function CalendarBoard({
     return out;
   }, [meetings, rangeStart, rangeEnd, courses]);
 
+  // Booked office hours flow like seedEvents (already timestamped).
+  const officeHourEvents = useMemo(() => {
+    if (!officeHours || officeHours.length === 0) return [];
+    return officeHours.map((s) => {
+      const course = courses.find((c) => c.id === s.courseKey);
+      return {
+        e: {
+          id: `office_${s.id}`,
+          courseId: s.courseKey,
+          title: course ? `Office hours · ${course.code}` : "Office hours",
+          at: s.startsAt,
+          type: "office_hours" as const,
+        },
+        location: s.location,
+      };
+    });
+  }, [officeHours, courses]);
+
   const allEvents = useMemo(
     () => [
       ...seedEvents.map((e) => ({ e, local: false, location: "" })),
       ...personalEvents.map((e) => ({ e, local: true, location: "" })),
       ...meetingEvents.map((row) => ({ e: row.e, local: false, location: row.location })),
+      ...officeHourEvents.map((row) => ({ e: row.e, local: false, location: row.location })),
     ],
-    [seedEvents, personalEvents, meetingEvents],
+    [seedEvents, personalEvents, meetingEvents, officeHourEvents],
   );
 
   const grouped = useMemo(() => {
