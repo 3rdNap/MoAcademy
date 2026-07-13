@@ -6,14 +6,20 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 interface GenerateRequest {
-  kind: "assignment-description" | "announcement-body" | "family-summary";
-  /** Assignment/announcement title — or the child's name for family-summary. */
+  kind:
+    | "assignment-description"
+    | "announcement-body"
+    | "family-summary"
+    | "student-checkin";
+  /** Assignment/announcement title — or the student's first name for check-ins. */
   title: string;
   type?: string;
   course?: string;
   points?: number;
   /** Context lines (grades, deadlines) for family-summary. */
   details?: string[];
+  /** Compact signal string (missing/attendance/average) for student-checkin. */
+  context?: string;
 }
 
 /**
@@ -39,7 +45,12 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
-  const kinds = ["assignment-description", "announcement-body", "family-summary"];
+  const kinds = [
+    "assignment-description",
+    "announcement-body",
+    "family-summary",
+    "student-checkin",
+  ];
   if (!kinds.includes(body.kind) || !body.title?.trim()) {
     return NextResponse.json({ error: "Missing title." }, { status: 400 });
   }
@@ -50,23 +61,35 @@ export async function POST(req: Request) {
         "child's schoolwork. Warm, honest and concrete — no jargon, no " +
         "Markdown, no headings. 3 to 4 sentences, ending with one practical " +
         "way the parent can help this week."
-      : "You draft course content for MoAcademy, an online school. Write clear, " +
-        "encouraging text students can act on. Plain text only — no Markdown " +
-        "headings or asterisks. Keep it under 120 words.";
+      : body.kind === "student-checkin"
+        ? "You are Mo, MoAcademy's assistant, drafting a short message an " +
+          "instructor will send to one of their students. Warm, personal and " +
+          "non-judgmental — 2 to 3 sentences, plain text, no Markdown. Touch on " +
+          "the context lightly without reciting numbers back or shaming grades; " +
+          "invite the student to reply or drop by office hours, and make no " +
+          "promises about grades or outcomes."
+        : "You draft course content for MoAcademy, an online school. Write clear, " +
+          "encouraging text students can act on. Plain text only — no Markdown " +
+          "headings or asterisks. Keep it under 120 words.";
 
   const prompt =
     body.kind === "family-summary"
       ? `Summarise how ${body.title.trim()} is doing at school for their parent, based on:\n` +
         (body.details ?? []).slice(0, 20).join("\n")
-      : body.kind === "announcement-body"
-        ? `Write the body of a course announcement titled "${body.title.trim()}"` +
-          (body.course ? ` for the course "${body.course}"` : "") +
-          ". Friendly and direct: what's happening, what students should do, and by when (leave specifics like exact dates as placeholders in square brackets if unknown)."
-        : `Write the student-facing description for this ${body.type || "assignment"}` +
-          (body.course ? ` in the course "${body.course}"` : "") +
-          `: "${body.title.trim()}"` +
-          (body.points ? ` (worth ${body.points} points)` : "") +
-          ". Cover what to do, what to hand in, and one tip for doing well.";
+      : body.kind === "student-checkin"
+        ? `Write a check-in message to ${body.title.trim()}, a student` +
+          (body.course ? ` in ${body.course}` : "") +
+          `. Here is how they're doing: ${body.context?.trim() || "just settling in"}.` +
+          " Keep it brief, caring and specific to them."
+        : body.kind === "announcement-body"
+          ? `Write the body of a course announcement titled "${body.title.trim()}"` +
+            (body.course ? ` for the course "${body.course}"` : "") +
+            ". Friendly and direct: what's happening, what students should do, and by when (leave specifics like exact dates as placeholders in square brackets if unknown)."
+          : `Write the student-facing description for this ${body.type || "assignment"}` +
+            (body.course ? ` in the course "${body.course}"` : "") +
+            `: "${body.title.trim()}"` +
+            (body.points ? ` (worth ${body.points} points)` : "") +
+            ". Cover what to do, what to hand in, and one tip for doing well.";
 
   const client = new Anthropic({ apiKey });
   const model = process.env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL;
