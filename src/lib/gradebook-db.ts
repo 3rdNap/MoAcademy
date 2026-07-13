@@ -224,6 +224,186 @@ export async function fetchCourseSubmissions(
   }
 }
 
+/* ------------------------------- Rubrics -------------------------------- */
+// Instructors define criteria (with point values) on a published assignment
+// and award points per criterion per student. Criteria are public-read (so
+// students see the breakdown); scores follow submission visibility via RLS —
+// migration 0031. Everything degrades to null/false like the rest of this file.
+
+export interface RubricCriterion {
+  id: string;
+  assignmentId: string;
+  description: string;
+  points: number;
+  position: number;
+}
+
+export interface RubricScore {
+  criterionId: string;
+  studentId: string;
+  points: number;
+}
+
+interface RubricCriterionRow {
+  id: string;
+  assignment_id: string;
+  description: string;
+  points: number;
+  position: number;
+}
+
+interface RubricScoreRow {
+  criterion_id: string;
+  student_id: string;
+  points: number;
+}
+
+function mapCriterion(r: RubricCriterionRow): RubricCriterion {
+  return {
+    id: r.id,
+    assignmentId: r.assignment_id,
+    description: r.description,
+    points: r.points,
+    position: r.position,
+  };
+}
+
+/** Rubric criteria for these assignments, ordered by position. Public read. */
+export async function fetchRubrics(
+  assignmentIds: string[],
+): Promise<RubricCriterion[] | null> {
+  if (assignmentIds.length === 0) return null;
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("rubric_criteria")
+      .select("*")
+      .in("assignment_id", assignmentIds)
+      .order("position", { ascending: true });
+    if (error || !data) return null;
+    return (data as unknown as RubricCriterionRow[]).map(mapCriterion);
+  } catch {
+    return null;
+  }
+}
+
+/** Add a criterion as the assignment's teaching account. Null when refused. */
+export async function addRubricCriterion(
+  assignmentId: string,
+  input: { description: string; points: number; position: number },
+): Promise<RubricCriterion | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("rubric_criteria")
+      .insert({
+        assignment_id: assignmentId,
+        description: input.description,
+        points: input.points,
+        position: input.position,
+      })
+      .select()
+      .single();
+    if (error || !data) return null;
+    return mapCriterion(data as unknown as RubricCriterionRow);
+  } catch {
+    return null;
+  }
+}
+
+/** Edit a criterion's description/points as the assignment's teaching account. */
+export async function updateRubricCriterion(
+  id: string,
+  patch: { description?: string; points?: number },
+): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return false;
+    const { error } = await supabase
+      .from("rubric_criteria")
+      .update(patch)
+      .eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/** Delete a criterion (cascades its scores). False when refused. */
+export async function removeRubricCriterion(id: string): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return false;
+    const { error } = await supabase
+      .from("rubric_criteria")
+      .delete()
+      .eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/** Rubric scores for these criteria, scoped by RLS (own row / taught roster). */
+export async function fetchRubricScores(
+  criterionIds: string[],
+): Promise<RubricScore[] | null> {
+  if (criterionIds.length === 0) return null;
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("rubric_scores")
+      .select("criterion_id, student_id, points")
+      .in("criterion_id", criterionIds);
+    if (error || !data) return null;
+    return (data as unknown as RubricScoreRow[]).map((r) => ({
+      criterionId: r.criterion_id,
+      studentId: r.student_id,
+      points: r.points,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+/** Award a criterion score for a student as the assignment's teaching account. */
+export async function upsertRubricScore(
+  criterionId: string,
+  studentId: string,
+  points: number,
+): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return false;
+    const { error } = await supabase.from("rubric_scores").upsert(
+      { criterion_id: criterionId, student_id: studentId, points },
+      { onConflict: "criterion_id,student_id" },
+    );
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 /** Grade a student's submission as the signed-in teaching account. */
 export async function upsertGrade(
   assignmentId: string,
