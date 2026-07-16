@@ -1,14 +1,79 @@
 import Link from "next/link";
-import { FileText } from "lucide-react";
+import { redirect } from "next/navigation";
+import { ClipboardList, FileText } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Badge } from "@/components/ui/Badge";
-import { getAssignments, getCourses } from "@/lib/data";
+import { getAssignments, getAuthState, getCourses } from "@/lib/data";
+import { canTeach, isParent } from "@/lib/role";
 import { letterGrade } from "@/lib/utils";
 
 export const metadata = { title: "Grades" };
 
 export default async function GradesPage() {
+  const { role } = await getAuthState();
+
+  // Parents track their child's grades on /family, not a personal standing page.
+  if (isParent(role)) redirect("/family");
+
+  // Instructors/admins manage gradebooks, not their own standing. For
+  // instructors getCourses() already returns just their teaching courses.
+  if (canTeach(role)) return <GradebooksView admin={role === "admin"} />;
+
+  return <StudentGradesView />;
+}
+
+/** Teaching view: links into each course gradebook — no personal GPA. */
+async function GradebooksView({ admin }: { admin: boolean }) {
+  const courses = await getCourses();
+
+  return (
+    <>
+      <PageHeader
+        title="Gradebooks"
+        subtitle={
+          admin
+            ? "Gradebooks across the catalogue."
+            : "Grading for the courses you teach."
+        }
+        action={
+          <Link
+            href="/dashboard"
+            className="focus-ring flex items-center gap-1.5 rounded-lg border border-black/10 bg-surface px-3 py-2 text-sm font-medium text-ink hover:bg-surface-subtle dark:border-white/10"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Needs grading
+          </Link>
+        }
+      />
+
+      <div className="card divide-y divide-black/5">
+        {courses.map((course) => (
+          <Link
+            key={course.id}
+            href={`/courses/${course.id}/grades`}
+            className="flex items-center gap-4 p-4 hover:bg-surface-subtle"
+          >
+            <span
+              className="h-10 w-1.5 rounded-full"
+              style={{ backgroundColor: course.color }}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="font-medium text-ink">{course.name}</p>
+                <span className="text-xs text-ink-faint">{course.code}</span>
+              </div>
+              <p className="mt-1 text-xs text-ink-faint">Open gradebook</p>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** Student/anonymous view: personal standing across enrolled courses. */
+async function StudentGradesView() {
   const courses = await getCourses();
 
   const rows = await Promise.all(

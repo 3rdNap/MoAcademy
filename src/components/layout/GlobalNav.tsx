@@ -27,13 +27,18 @@ export function GlobalNav() {
   // Role-specific entries (surfaced after hydration to avoid a mismatch).
   const familyItem: GlobalNavItem = { label: "Family", href: "/family", icon: Users };
   const adminItem: GlobalNavItem = { label: "Admin", href: "/admin", icon: ShieldCheck };
+  // Pre-hydration keeps the full list (server-rendered default); once the
+  // previewed/authoritative role is known, drop items that role can't see.
+  const visible = hydrated
+    ? globalNav.filter((item) => item.roles?.includes(role) ?? true)
+    : globalNav;
   const items: GlobalNavItem[] = !hydrated
-    ? globalNav
+    ? visible
     : isParent(role)
-      ? [globalNav[0], familyItem, ...globalNav.slice(1)]
+      ? [visible[0], familyItem, ...visible.slice(1)]
       : isAdmin(role)
-        ? [globalNav[0], adminItem, ...globalNav.slice(1)]
-        : globalNav;
+        ? [visible[0], adminItem, ...visible.slice(1)]
+        : visible;
 
   const isActive = (href: string) =>
     href === "/dashboard"
