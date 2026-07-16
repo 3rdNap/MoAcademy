@@ -24,6 +24,7 @@ import { PinnedCourses } from "@/components/dashboard/PinnedCourses";
 import { StudyPlanWidget } from "@/components/dashboard/StudyPlanWidget";
 import { RolePreviewBanner } from "@/components/role/RolePreviewBanner";
 import { GuardianProvisioner } from "@/components/family/GuardianProvisioner";
+import { InstructorDashboard } from "@/components/dashboard/InstructorDashboard";
 import {
   getActivity,
   getAdminOverview,
@@ -60,6 +61,23 @@ export default async function DashboardPage() {
   // Parents/guardians land on their family view (their child's progress).
   if (auth.authed && auth.role === "parent") {
     redirect("/family");
+  }
+
+  // Instructors get a teaching home (grading backlog, teaching tools, the
+  // courses they teach) instead of the student enrolment/study-plan layout.
+  if (auth.authed && auth.role === "instructor") {
+    const [user, courses, announcements] = await Promise.all([
+      getCurrentUser(),
+      getCourses(),
+      getAnnouncements(),
+    ]);
+    return (
+      <InstructorDashboard
+        user={user}
+        courses={courses}
+        announcements={announcements}
+      />
+    );
   }
 
   const [user, courses, upcoming, activity, announcements] = await Promise.all([

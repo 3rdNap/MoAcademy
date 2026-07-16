@@ -12,18 +12,19 @@ export default async function CoursesPage() {
     return acc;
   }, {});
 
+  const subtitle = !auth.authed
+    ? "All courses you're enrolled in or teaching."
+    : auth.role === "instructor"
+      ? "The courses you're teaching this term."
+      : auth.role === "admin"
+        ? "The full subject catalogue."
+        : "The subjects you're enrolled in this term.";
+
   return (
     <>
-      <PageHeader
-        title="Courses"
-        subtitle={
-          auth.authed
-            ? "The subjects you're enrolled in this term."
-            : "All courses you're enrolled in or teaching."
-        }
-      />
+      <PageHeader title="Courses" subtitle={subtitle} />
 
-      {/* Signed in but nothing registered yet */}
+      {/* Signed in but nothing assigned yet */}
       {auth.authed && courses.length === 0 ? (
         <div className="card flex flex-col items-center gap-3 p-12 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15">
@@ -32,8 +33,9 @@ export default async function CoursesPage() {
           <div>
             <p className="font-semibold text-ink">No courses yet</p>
             <p className="mt-1 text-sm text-ink-muted">
-              Subjects are assigned by the academy office. Once you&apos;re
-              enrolled, they&apos;ll appear here as your courses.
+              {auth.role === "instructor"
+                ? "No teaching assignments yet — the office assigns your subjects. Once you're assigned a class, it'll appear here."
+                : "Subjects are assigned by the academy office. Once you're enrolled, they'll appear here as your courses."}
             </p>
           </div>
         </div>

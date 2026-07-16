@@ -1,22 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, Lock, Plus, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CheckCircle2, Clock, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Field, Input, Select } from "@/components/ui/form";
+import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import {
   addRemoteModule,
   addRemoteModuleItem,
+  courseFileUrl,
   fetchRemoteModules,
   removeRemoteModule,
   removeRemoteModuleItem,
   setRemoteModulePublished,
+  updateRemoteModuleItem,
+  uploadCourseFile,
 } from "@/lib/course-content-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
 import { fetchMyItemProgress, setItemComplete } from "@/lib/module-progress-db";
@@ -160,6 +164,9 @@ export function CourseModulesBoard({
         title: item.title,
         type: item.type,
         position: m.items.length,
+        body: item.body,
+        url: item.url,
+        filePath: item.filePath,
       });
       if (created) {
         setRemote((prev) =>
@@ -171,6 +178,34 @@ export function CourseModulesBoard({
       return;
     }
     authored.update(m.id, { items: [...m.items, item] });
+  }
+
+  async function updateItem(
+    m: CourseModule,
+    source: Source,
+    itemId: string,
+    patch: { title?: string; body?: string; url?: string; filePath?: string },
+  ) {
+    if (source === "remote") {
+      if (await updateRemoteModuleItem(itemId, patch)) {
+        setRemote((prev) =>
+          (prev ?? []).map((x) =>
+            x.id === m.id
+              ? {
+                  ...x,
+                  items: x.items.map((it) =>
+                    it.id === itemId ? { ...it, ...patch } : it,
+                  ),
+                }
+              : x,
+          ),
+        );
+      }
+      return;
+    }
+    authored.update(m.id, {
+      items: m.items.map((it) => (it.id === itemId ? { ...it, ...patch } : it)),
+    });
   }
 
   async function deleteItem(m: CourseModule, source: Source, itemId: string) {
@@ -259,7 +294,9 @@ export function CourseModulesBoard({
           <ModuleSection
             key={m.id}
             module={m}
+            courseId={course.id}
             color={course.color}
+            signedIn={signedIn}
             editable={
               teaching && (source === "local" || (source === "remote" && signedIn))
             }
@@ -270,6 +307,7 @@ export function CourseModulesBoard({
             onTogglePublished={() => togglePublished(m, source)}
             onDeleteModule={() => deleteModule(m, source)}
             onAddItem={(item) => addItem(m, source, item)}
+            onUpdateItem={(itemId, patch) => updateItem(m, source, itemId, patch)}
             onDeleteItem={(itemId) => deleteItem(m, source, itemId)}
           />
         ))}
@@ -313,9 +351,16 @@ export function CourseModulesBoard({
   );
 }
 
+// Types whose content lives in the item itself (a page body, an external/video
+// URL, an uploaded file) and so open a content editor on add. The rest
+// (assignment/quiz/discussion) are pointers to course tabs — title only.
+const contentTypes: ModuleItemType[] = ["page", "link", "video", "file"];
+
 function ModuleSection({
   module,
+  courseId,
   color,
+  signedIn,
   editable,
   shared,
   teaching,
@@ -324,10 +369,14 @@ function ModuleSection({
   onTogglePublished,
   onDeleteModule,
   onAddItem,
+  onUpdateItem,
   onDeleteItem,
 }: {
   module: CourseModule;
+  courseId: string;
   color: string;
+  /** File uploads need a signed-in account; hide the file type otherwise. */
+  signedIn: boolean;
   editable: boolean;
   /** True when this module lives in the shared database. */
   shared?: boolean;
@@ -338,16 +387,89 @@ function ModuleSection({
   onTogglePublished: () => void;
   onDeleteModule: () => void;
   onAddItem: (item: ModuleItem) => void;
+  onUpdateItem: (
+    itemId: string,
+    patch: { title?: string; body?: string; url?: string; filePath?: string },
+  ) => void;
   onDeleteItem: (itemId: string) => void;
 }) {
+  const router = useRouter();
   const [itemTitle, setItemTitle] = useState("");
   const [itemType, setItemType] = useState<ModuleItemType>("page");
+  // Content editor: `null` closed; `{ type }` = new item; `{ item }` = edit.
+  const [editor, setEditor] = useState<
+    { type: ModuleItemType; item?: ModuleItem } | null
+  >(null);
+  const [viewing, setViewing] = useState<ModuleItem | null>(null);
+
+  const availableTypes = itemTypes.filter((t) => t !== "file" || signedIn);
 
   function addItem(e: React.FormEvent) {
     e.preventDefault();
     if (!itemTitle.trim()) return;
+    // Content-bearing types collect their content in a modal; the rest add
+    // immediately since they just point at a course tab.
+    if (contentTypes.includes(itemType)) {
+      setEditor({ type: itemType });
+      return;
+    }
     onAddItem({ id: newId(), title: itemTitle.trim(), type: itemType });
     setItemTitle("");
+  }
+
+  function saveEditor(patch: {
+    title: string;
+    body?: string;
+    url?: string;
+    filePath?: string;
+  }) {
+    if (editor?.item) {
+      onUpdateItem(editor.item.id, patch);
+    } else if (editor) {
+      onAddItem({ id: newId(), type: editor.type, ...patch });
+      setItemTitle("");
+    }
+    setEditor(null);
+  }
+
+  // A row is interactive only when it has somewhere to go: content types need
+  // their content, course-tab pointers always resolve.
+  function itemTarget(it: ModuleItem): boolean {
+    switch (it.type) {
+      case "page":
+        return Boolean(it.body?.trim());
+      case "link":
+      case "video":
+        return Boolean(it.url);
+      case "file":
+        return Boolean(it.filePath);
+      default:
+        return true;
+    }
+  }
+
+  function openItem(it: ModuleItem) {
+    switch (it.type) {
+      case "page":
+        setViewing(it);
+        return;
+      case "link":
+      case "video":
+        if (it.url) window.open(it.url, "_blank", "noopener,noreferrer");
+        return;
+      case "file": {
+        const url = it.filePath ? courseFileUrl(it.filePath) : null;
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      case "assignment":
+      case "quiz":
+        router.push(`/courses/${courseId}/assignments`);
+        return;
+      case "discussion":
+        router.push(`/courses/${courseId}/discussions`);
+        return;
+    }
   }
 
   const doneCount = module.items.filter(isItemComplete).length;
@@ -395,6 +517,7 @@ function ModuleSection({
         {module.items.map((it) => {
           const Icon = itemIcon[it.type];
           const done = isItemComplete(it);
+          const clickable = itemTarget(it);
           return (
             <li
               key={it.id}
@@ -423,25 +546,58 @@ function ModuleSection({
                   </button>
                 )}
               </span>
-              <div className="min-w-0 flex-1">
-                <p
-                  className={
-                    done ? "text-sm text-ink-muted" : "text-sm font-medium text-ink"
-                  }
+              {clickable ? (
+                <button
+                  type="button"
+                  onClick={() => openItem(it)}
+                  className="focus-ring group min-w-0 flex-1 rounded text-left"
                 >
-                  {it.title}
-                </p>
-                <p className="text-xs text-ink-faint">
-                  {itemLabel[it.type]}
-                  {it.durationMin ? ` · ${it.durationMin} min` : ""}
-                  {it.dueAt ? ` · Due ${formatDateTime(it.dueAt)}` : ""}
-                </p>
-              </div>
+                  <p
+                    className={
+                      done
+                        ? "text-sm text-ink-muted group-hover:text-ink group-hover:underline"
+                        : "text-sm font-medium text-ink group-hover:underline"
+                    }
+                  >
+                    {it.title}
+                  </p>
+                  <p className="text-xs text-ink-faint">
+                    {itemLabel[it.type]}
+                    {it.durationMin ? ` · ${it.durationMin} min` : ""}
+                    {it.dueAt ? ` · Due ${formatDateTime(it.dueAt)}` : ""}
+                  </p>
+                </button>
+              ) : (
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={
+                      done ? "text-sm text-ink-muted" : "text-sm font-medium text-ink"
+                    }
+                  >
+                    {it.title}
+                  </p>
+                  <p className="text-xs text-ink-faint">
+                    {itemLabel[it.type]}
+                    {it.durationMin ? ` · ${it.durationMin} min` : ""}
+                    {it.dueAt ? ` · Due ${formatDateTime(it.dueAt)}` : ""}
+                  </p>
+                </div>
+              )}
               {it.dueAt && !done && (
                 <span className="hidden items-center gap-1 text-xs text-ink-faint sm:flex">
                   <Clock className="h-3.5 w-3.5" />
                   {formatDateTime(it.dueAt)}
                 </span>
+              )}
+              {/* Editing rich content only makes sense for shared (remote) rows. */}
+              {editable && shared && contentTypes.includes(it.type) && (
+                <button
+                  onClick={() => setEditor({ type: it.type, item: it })}
+                  className="focus-ring rounded p-1 text-ink-faint hover:text-ink"
+                  aria-label="Edit item content"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
               )}
               {editable && (
                 <button
@@ -476,7 +632,7 @@ function ModuleSection({
             onChange={(e) => setItemType(e.target.value as ModuleItemType)}
             className="h-9 w-32 py-1.5 text-sm"
           >
-            {itemTypes.map((t) => (
+            {availableTypes.map((t) => (
               <option key={t} value={t}>
                 {itemLabel[t]}
               </option>
@@ -487,6 +643,177 @@ function ModuleSection({
           </Button>
         </form>
       )}
+
+      {editor && (
+        <ItemContentModal
+          type={editor.type}
+          editing={Boolean(editor.item)}
+          canUpload={signedIn}
+          initial={
+            editor.item
+              ? {
+                  title: editor.item.title,
+                  body: editor.item.body,
+                  url: editor.item.url,
+                  filePath: editor.item.filePath,
+                }
+              : { title: itemTitle.trim() }
+          }
+          onClose={() => setEditor(null)}
+          onSave={saveEditor}
+        />
+      )}
+
+      <Modal
+        open={viewing !== null}
+        onClose={() => setViewing(null)}
+        title={viewing?.title ?? ""}
+      >
+        {viewing?.body?.trim() ? (
+          <p className="whitespace-pre-wrap text-sm text-ink">{viewing.body}</p>
+        ) : (
+          <p className="text-sm text-ink-faint">This page has no content yet.</p>
+        )}
+      </Modal>
     </section>
+  );
+}
+
+// Author a content-bearing item (page body / link · video URL / uploaded file).
+// Used for both adding a new item and editing an existing shared one. Mounted
+// only while open, so its draft state starts fresh each time.
+function ItemContentModal({
+  type,
+  editing,
+  canUpload,
+  initial,
+  onClose,
+  onSave,
+}: {
+  type: ModuleItemType;
+  editing: boolean;
+  canUpload: boolean;
+  initial: { title: string; body?: string; url?: string; filePath?: string };
+  onClose: () => void;
+  onSave: (patch: {
+    title: string;
+    body?: string;
+    url?: string;
+    filePath?: string;
+  }) => void;
+}) {
+  const [title, setTitle] = useState(initial.title);
+  const [body, setBody] = useState(initial.body ?? "");
+  const [url, setUrl] = useState(initial.url ?? "");
+  const [file, setFile] = useState<File | null>(null);
+  const [existingPath] = useState(initial.filePath);
+  const [uploading, setUploading] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const urlType = type === "link" || type === "video";
+
+  async function save() {
+    if (!title.trim()) return;
+
+    let filePath = existingPath;
+    if (type === "file") {
+      if (file) {
+        setUploading(true);
+        const res = await uploadCourseFile(file);
+        setUploading(false);
+        if (!res) {
+          setNote("Couldn't upload the file — try again.");
+          return;
+        }
+        filePath = res.path;
+      }
+      if (!filePath) {
+        setNote("Choose a file to upload.");
+        return;
+      }
+    }
+
+    onSave({
+      title: title.trim(),
+      body: type === "page" ? body : undefined,
+      url: urlType ? url.trim() || undefined : undefined,
+      filePath: type === "file" ? filePath : undefined,
+    });
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`${editing ? "Edit" : "New"} ${itemLabel[type].toLowerCase()}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={uploading}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={!title.trim() || uploading}>
+            {uploading ? "Uploading…" : "Save"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Field label="Title *">
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Reading · Chapter 3"
+          />
+        </Field>
+
+        {type === "page" && (
+          <Field label="Page content">
+            <Textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Write the page content students will read…"
+              className="min-h-[160px]"
+            />
+          </Field>
+        )}
+
+        {urlType && (
+          <Field label={type === "video" ? "Video URL" : "Link URL"}>
+            <Input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://…"
+            />
+          </Field>
+        )}
+
+        {type === "file" && (
+          <Field label="File">
+            {existingPath && !file && (
+              <p className="mb-2 text-xs text-ink-muted">
+                A file is already attached. Choose a new one to replace it.
+              </p>
+            )}
+            <input
+              type="file"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-surface-sunken file:px-3 file:py-1.5 file:text-sm file:text-ink"
+            />
+            {!canUpload && (
+              <p className="mt-2 text-xs text-ink-faint">
+                Sign in with a teaching account to upload files.
+              </p>
+            )}
+          </Field>
+        )}
+
+        {note && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+            {note}
+          </p>
+        )}
+      </div>
+    </Modal>
   );
 }
