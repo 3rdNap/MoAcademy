@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { CourseScheduleWidget } from "@/components/courses/CourseScheduleWidget";
 import { OfficeHoursWidget } from "@/components/courses/OfficeHoursWidget";
+import { TeachingCoursePanel } from "@/components/courses/TeachingCoursePanel";
 import { itemIcon } from "@/lib/itemMeta";
 import {
   getAnnouncements,
@@ -46,8 +47,13 @@ export default async function CourseHomePage({
   );
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="space-y-6">
+    <div className="space-y-6">
+      {/* Teaching accounts get an overview header above the student framing;
+          renders nothing for students / anonymous demo (role is client-side). */}
+      <TeachingCoursePanel course={course} />
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-6">
         <section className="card p-5">
           <h2 className="text-lg font-semibold text-ink">Welcome</h2>
           <p className="mt-2 text-sm leading-relaxed text-ink-muted">
@@ -186,6 +192,7 @@ export default async function CourseHomePage({
             </ul>
           )}
         </Widget>
+        </div>
       </div>
     </div>
   );

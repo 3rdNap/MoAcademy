@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
+import type { Role } from "@/lib/types";
 
 /** Lucide icons and the logo-mark icon both fit this shape. */
 export type NavIcon =
@@ -24,6 +25,8 @@ export interface GlobalNavItem {
   badgeKey?: "inbox";
   /** Shown directly on the mobile bottom bar; the rest go in the More sheet. */
   onMobileBar?: boolean;
+  /** Roles that see this item; absent = every role. */
+  roles?: Role[];
 }
 
 /** Canvas-style global navigation rail items. */
@@ -32,11 +35,13 @@ export const globalNav: GlobalNavItem[] = [
   { label: "Courses", href: "/courses", icon: LayoutGrid, onMobileBar: true },
   { label: "Study Guides", href: "/study-guides", icon: Library },
   { label: "Assistant", href: "/assistant", icon: MoMarkIcon, onMobileBar: true },
-  { label: "Practice", href: "/practice", icon: ListChecks },
-  { label: "Roadmap", href: "/roadmap", icon: Compass, onMobileBar: true },
+  { label: "Practice", href: "/practice", icon: ListChecks, roles: ["student"] },
+  { label: "Roadmap", href: "/roadmap", icon: Compass, onMobileBar: true, roles: ["student"] },
   { label: "Calendar", href: "/calendar", icon: Calendar, onMobileBar: true },
   { label: "Inbox", href: "/inbox", icon: Inbox, badgeKey: "inbox" },
-  { label: "Grades", href: "/grades", icon: GraduationCap },
+  // "Grades" is the student's personal standing; parents use /family, and
+  // instructors/admins reach gradebooks from courses/dashboard, not this rail item.
+  { label: "Grades", href: "/grades", icon: GraduationCap, roles: ["student"] },
 ];
 
 export interface CourseNavItem {
