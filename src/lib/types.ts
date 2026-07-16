@@ -52,6 +52,11 @@ export interface ModuleItem {
   /** Minutes of estimated effort, shown Brightspace-style. */
   durationMin?: number;
   indent?: number;
+  /** Rich content by type (migration 0034): page body, external/video URL,
+   *  or the storage path of an uploaded file in the public course-files bucket. */
+  body?: string;
+  url?: string;
+  filePath?: string;
 }
 
 export interface CourseModule {

@@ -545,6 +545,9 @@ interface RawModuleItem {
   due_at: string | null;
   duration_min: number | null;
   indent: number | null;
+  body: string | null;
+  url: string | null;
+  file_path: string | null;
 }
 function mapItem(r: RawModuleItem): ModuleItem {
   return {
@@ -554,6 +557,9 @@ function mapItem(r: RawModuleItem): ModuleItem {
     dueAt: r.due_at ?? undefined,
     durationMin: r.duration_min ?? undefined,
     indent: r.indent ?? undefined,
+    body: r.body ?? undefined,
+    url: r.url ?? undefined,
+    filePath: r.file_path ?? undefined,
     completed: false,
   };
 }

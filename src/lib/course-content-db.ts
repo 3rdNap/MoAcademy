@@ -350,6 +350,9 @@ interface ModuleItemRow {
   due_at: string | null;
   duration_min: number | null;
   indent: number | null;
+  body: string | null;
+  url: string | null;
+  file_path: string | null;
 }
 
 interface ModuleRow {
@@ -370,6 +373,9 @@ function mapItemRow(r: ModuleItemRow): ModuleItem {
     dueAt: r.due_at ?? undefined,
     durationMin: r.duration_min ?? undefined,
     indent: r.indent ?? undefined,
+    body: r.body ?? undefined,
+    url: r.url ?? undefined,
+    filePath: r.file_path ?? undefined,
     completed: false,
   };
 }
@@ -461,7 +467,14 @@ export async function removeRemoteModule(id: string): Promise<boolean> {
 /** Add an item to a shared module. Null when refused. */
 export async function addRemoteModuleItem(
   moduleId: string,
-  input: { title: string; type: ModuleItem["type"]; position: number },
+  input: {
+    title: string;
+    type: ModuleItem["type"];
+    position: number;
+    body?: string;
+    url?: string;
+    filePath?: string;
+  },
 ): Promise<ModuleItem | null> {
   const supabase = createSupabaseBrowserClient();
   if (!supabase) return null;
@@ -473,6 +486,9 @@ export async function addRemoteModuleItem(
         title: input.title,
         type: input.type,
         position: input.position,
+        body: input.body ?? "",
+        url: input.url ?? null,
+        file_path: input.filePath ?? null,
       })
       .select()
       .single();
@@ -480,6 +496,29 @@ export async function addRemoteModuleItem(
     return mapItemRow(data as unknown as ModuleItemRow);
   } catch {
     return null;
+  }
+}
+
+/** Edit a shared item's content. False when refused (not a teaching account). */
+export async function updateRemoteModuleItem(
+  id: string,
+  patch: { title?: string; body?: string; url?: string; filePath?: string },
+): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const row: Record<string, unknown> = {};
+    if (patch.title !== undefined) row.title = patch.title;
+    if (patch.body !== undefined) row.body = patch.body;
+    if (patch.url !== undefined) row.url = patch.url;
+    if (patch.filePath !== undefined) row.file_path = patch.filePath;
+    const { error } = await supabase
+      .from("module_items")
+      .update(row)
+      .eq("id", id);
+    return !error;
+  } catch {
+    return false;
   }
 }
 
@@ -492,6 +531,48 @@ export async function removeRemoteModuleItem(id: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+const COURSE_FILES_BUCKET = "course-files";
+
+/** Upload a file to the public course-files bucket (migration 0034). Returns
+ *  the storage path + public URL, or null when refused/offline so the caller
+ *  can surface an upload-failed note. Teaching-role writes only, per RLS. */
+export async function uploadCourseFile(
+  file: File,
+): Promise<{ path: string; publicUrl: string; name: string } | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    // Object keys reject some characters common in filenames; keep the display
+    // name (title) intact elsewhere.
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
+    const { error } = await supabase.storage
+      .from(COURSE_FILES_BUCKET)
+      .upload(path, file, { upsert: false, contentType: file.type });
+    if (error) return null;
+    const { data } = supabase.storage
+      .from(COURSE_FILES_BUCKET)
+      .getPublicUrl(path);
+    return { path, publicUrl: data.publicUrl, name: file.name };
+  } catch {
+    return null;
+  }
+}
+
+/** Public URL for a stored course file. Sync — public buckets need no signing. */
+export function courseFileUrl(path: string): string | null {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  return (
+    supabase.storage.from(COURSE_FILES_BUCKET).getPublicUrl(path).data
+      .publicUrl ?? null
+  );
 }
 
 /* ------------------------------- syllabus ------------------------------- */
