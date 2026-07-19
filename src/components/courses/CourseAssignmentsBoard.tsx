@@ -50,12 +50,14 @@ import {
   addQuizQuestion,
   fetchAnswerKeys,
   fetchMyAttempts,
+  fetchMyQuizSources,
   fetchQuizQuestions,
   removeQuizQuestion,
   submitQuizAttempt,
   updateQuizQuestion,
   type QuizAttempt,
   type QuizQuestion,
+  type QuizSource,
 } from "@/lib/quiz-db";
 import { itemIcon } from "@/lib/itemMeta";
 import { formatDateTime, relativeTime } from "@/lib/utils";
@@ -433,6 +435,82 @@ export function CourseAssignmentsBoard({
     } else {
       setPubNote("Couldn't delete the question (teaching account required).");
     }
+  }
+
+  // Import-from-another-quiz screen (inside the quiz modal). Sources are the
+  // instructor's other quizzes; picking one lists its questions to copy.
+  const [importOpen, setImportOpen] = useState(false);
+  const [importSources, setImportSources] = useState<QuizSource[] | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importSel, setImportSel] = useState<QuizSource | null>(null);
+  const [importQuestions, setImportQuestions] = useState<QuizQuestion[]>([]);
+  const [importChecked, setImportChecked] = useState<Set<string>>(new Set());
+  const [importBusy, setImportBusy] = useState(false);
+  const allImportChecked =
+    importQuestions.length > 0 && importChecked.size === importQuestions.length;
+
+  function resetImport() {
+    setImportOpen(false);
+    setImportSel(null);
+    setImportQuestions([]);
+    setImportChecked(new Set());
+  }
+
+  async function openImport() {
+    if (!quizFor) return;
+    setImportSel(null);
+    setImportQuestions([]);
+    setImportChecked(new Set());
+    setImportOpen(true);
+    setImportLoading(true);
+    const sources = await fetchMyQuizSources(quizFor.id);
+    setImportSources(sources ?? []);
+    setImportLoading(false);
+  }
+
+  async function selectSource(src: QuizSource) {
+    setImportSel(src);
+    setImportChecked(new Set());
+    const qs = await fetchQuizQuestions([src.assignmentId]);
+    setImportQuestions(qs ?? []);
+  }
+
+  async function runImport() {
+    if (!quizFor || importChecked.size === 0 || importBusy) return;
+    setImportBusy(true);
+    const selected = importQuestions.filter((q) => importChecked.has(q.id));
+    // One key fetch for all selected ids; a null/missing key means the source
+    // isn't teachable by this account — skip and count those questions.
+    const keys = await fetchAnswerKeys(selected.map((q) => q.id));
+    let nextPos = quizList.length;
+    let failed = 0;
+    for (const q of selected) {
+      const correctIndex = keys?.[q.id];
+      if (correctIndex === undefined) {
+        failed += 1;
+        continue;
+      }
+      const created = await addQuizQuestion(quizFor.id, {
+        prompt: q.prompt,
+        options: q.options,
+        correctIndex,
+        points: q.points,
+        position: nextPos,
+      });
+      if (created) {
+        nextPos += 1;
+        setQuestions((prev) => ({
+          ...prev,
+          [quizFor.id]: [...(prev[quizFor.id] ?? []), created],
+        }));
+        setAnswerKeys((prev) => ({ ...(prev ?? {}), [created.id]: correctIndex }));
+      } else {
+        failed += 1;
+      }
+    }
+    setImportBusy(false);
+    if (failed > 0) setPubNote(`Couldn't import ${failed} question(s).`);
+    resetImport();
   }
 
   // Manage-rubric modal (teaching accounts, real signed-in mode only).
@@ -1255,21 +1333,139 @@ export function CourseAssignmentsBoard({
         onClose={() => {
           setQuizFor(null);
           resetQuizForm();
+          resetImport();
         }}
         title={`Quiz questions · ${quizFor?.title ?? ""}`}
         description="Author multiple-choice questions. Students take one auto-graded attempt."
         footer={
-          <Button
-            onClick={() => {
-              setQuizFor(null);
-              resetQuizForm();
-            }}
-          >
-            Done
-          </Button>
+          importOpen ? (
+            <>
+              <Button variant="ghost" onClick={resetImport}>
+                Back
+              </Button>
+              <Button
+                onClick={runImport}
+                disabled={importChecked.size === 0 || importBusy}
+              >
+                {importBusy
+                  ? "Importing…"
+                  : `Import${importChecked.size ? ` ${importChecked.size}` : ""} selected`}
+              </Button>
+            </>
+          ) : (
+            <Button
+              onClick={() => {
+                setQuizFor(null);
+                resetQuizForm();
+                resetImport();
+              }}
+            >
+              Done
+            </Button>
+          )
         }
       >
+        {importOpen ? (
+          <div className="space-y-4">
+            {!importSel ? (
+              <>
+                <p className="text-sm text-ink-muted">
+                  Copy questions from another quiz you teach — the answer keys
+                  come with them.
+                </p>
+                {importLoading && (
+                  <p className="text-sm text-ink-faint">Finding your quizzes…</p>
+                )}
+                {!importLoading && (importSources?.length ?? 0) === 0 && (
+                  <p className="text-sm text-ink-faint">
+                    No other quizzes with questions were found.
+                  </p>
+                )}
+                <div className="space-y-1.5">
+                  {(importSources ?? []).map((src) => (
+                    <button
+                      key={src.assignmentId}
+                      type="button"
+                      onClick={() => selectSource(src)}
+                      className="focus-ring flex w-full items-center justify-between rounded-lg border border-black/5 px-3 py-2 text-left text-sm hover:bg-surface-subtle"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-ink">
+                        {src.title}
+                      </span>
+                      <span className="ml-2 shrink-0 text-xs text-ink-faint">
+                        {src.count} question{src.count === 1 ? "" : "s"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setImportSel(null)}
+                    className="focus-ring text-sm text-brand-600 hover:text-brand-700"
+                  >
+                    ← All quizzes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setImportChecked(
+                        allImportChecked
+                          ? new Set()
+                          : new Set(importQuestions.map((q) => q.id)),
+                      )
+                    }
+                    disabled={importQuestions.length === 0}
+                    className="focus-ring text-xs text-brand-600 hover:text-brand-700 disabled:opacity-50"
+                  >
+                    {allImportChecked ? "Clear all" : "Select all"}
+                  </button>
+                </div>
+                <p className="text-sm font-medium text-ink">{importSel.title}</p>
+                {importQuestions.length === 0 && (
+                  <p className="text-sm text-ink-faint">Loading questions…</p>
+                )}
+                <div className="space-y-1.5">
+                  {importQuestions.map((q) => (
+                    <label
+                      key={q.id}
+                      className="flex items-start gap-2 rounded-lg border border-black/5 px-3 py-2 text-sm text-ink"
+                    >
+                      <input
+                        type="checkbox"
+                        className="focus-ring mt-0.5"
+                        checked={importChecked.has(q.id)}
+                        onChange={() =>
+                          setImportChecked((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(q.id)) next.delete(q.id);
+                            else next.add(q.id);
+                            return next;
+                          })
+                        }
+                      />
+                      <span className="min-w-0 flex-1">
+                        {q.prompt}
+                        <span className="ml-1 text-ink-faint">
+                          ({q.points} pts)
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
         <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={openImport}>
+              <Upload className="h-4 w-4" /> Import from another quiz
+            </Button>
+          </div>
           {keysUnavailable && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
               Answer keys are unavailable — the correct answer can&apos;t be
@@ -1463,6 +1659,7 @@ export function CourseAssignmentsBoard({
             of {quizFor?.points ?? 0}.
           </p>
         </div>
+        )}
       </Modal>
 
       <Modal
