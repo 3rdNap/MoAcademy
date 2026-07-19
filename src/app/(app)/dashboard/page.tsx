@@ -2,20 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   Activity,
-  BookOpen,
   CalendarClock,
-  CreditCard,
   GraduationCap,
-  Library,
   Megaphone,
-  ShieldCheck,
   Sparkles,
-  TrendingUp,
-  Users,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Widget } from "@/components/ui/Widget";
-import { Badge } from "@/components/ui/Badge";
+import { AdminHome } from "@/components/dashboard/AdminHome";
 import { CourseCard } from "@/components/dashboard/CourseCard";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { UpcomingList } from "@/components/dashboard/UpcomingList";
@@ -27,14 +21,15 @@ import { GuardianProvisioner } from "@/components/family/GuardianProvisioner";
 import { InstructorDashboard } from "@/components/dashboard/InstructorDashboard";
 import {
   getActivity,
+  getAdminDashboard,
   getAdminOverview,
   getAnnouncements,
   getAuthState,
   getCourses,
+  getCurrentTerm,
   getCurrentUser,
   getUpcoming,
 } from "@/lib/data";
-import { formatMoney } from "@/lib/billing/pricing";
 import { formatDate, relativeTime } from "@/lib/utils";
 
 export const metadata = { title: "Dashboard" };
@@ -51,11 +46,20 @@ export default async function DashboardPage() {
 
   // Admins get an institution-focused home instead of the student layout.
   if (auth.authed && auth.role === "admin") {
-    const [user, overview] = await Promise.all([
+    const [user, overview, dashboard, currentTerm] = await Promise.all([
       getCurrentUser(),
       getAdminOverview(),
+      getAdminDashboard(),
+      getCurrentTerm(),
     ]);
-    return <AdminHome name={user.name} overview={overview} />;
+    return (
+      <AdminHome
+        name={user.name}
+        overview={overview}
+        dashboard={dashboard}
+        currentTerm={currentTerm}
+      />
+    );
   }
 
   // Parents/guardians land on their family view (their child's progress).
@@ -224,114 +228,6 @@ export default async function DashboardPage() {
                 </li>
               ))}
             </ul>
-          </Widget>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function AdminHome({
-  name,
-  overview,
-}: {
-  name: string;
-  overview: Awaited<ReturnType<typeof getAdminOverview>>;
-}) {
-  const students = overview?.counts.students ?? 0;
-  const instructors = overview?.counts.instructors ?? 0;
-  const paid = overview?.summary.paid ?? 0;
-  const revenue = overview?.summary.revenueCents ?? 0;
-  const recent = overview?.registrations.slice(0, 5) ?? [];
-
-  const links = [
-    { href: "/admin", label: "Admin console", icon: ShieldCheck, desc: "People, roles & registrations" },
-    { href: "/study-guides", label: "Study guides", icon: Library, desc: "Upload guides for students" },
-    { href: "/courses", label: "Subjects", icon: BookOpen, desc: "Browse the catalogue" },
-  ];
-
-  return (
-    <>
-      <PageHeader
-        title={`${greeting()}, ${name.split(" ")[0]}`}
-        subtitle={`Admin overview · ${formatDate(new Date().toISOString())}`}
-        action={
-          <Link
-            href="/admin"
-            className="focus-ring inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
-          >
-            <ShieldCheck className="h-4 w-4" /> Open console
-          </Link>
-        }
-      />
-
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard icon={<Users className="h-5 w-5" />} label="Students" value={String(students)} tone="text-brand-600" />
-        <StatCard icon={<GraduationCap className="h-5 w-5" />} label="Instructors" value={String(instructors)} tone="text-sky-600" />
-        <StatCard icon={<CreditCard className="h-5 w-5" />} label="Registrations" value={String(paid)} tone="text-amber-600" />
-        <StatCard icon={<TrendingUp className="h-5 w-5" />} label="Revenue" value={formatMoney(revenue / 100)} tone="text-violet-600" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <section className="lg:col-span-2">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-faint">
-            Manage
-          </h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {links.map((l) => {
-              const Icon = l.icon;
-              return (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  className="card focus-ring flex items-center gap-3 p-4 hover:bg-surface-subtle"
-                >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-500/15">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <div>
-                    <p className="font-semibold text-ink">{l.label}</p>
-                    <p className="text-xs text-ink-muted">{l.desc}</p>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-
-        <div>
-          <Widget
-            title="Recent registrations"
-            icon={<CreditCard className="h-4 w-4 text-brand-600" />}
-            action={
-              <Link href="/admin" className="text-xs font-medium text-brand-600 hover:underline">
-                All
-              </Link>
-            }
-          >
-            {recent.length === 0 ? (
-              <p className="text-sm text-ink-muted">
-                No registrations yet. They&apos;ll appear as students pay.
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {recent.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-ink">
-                        {r.payerName || r.payerEmail || "—"}
-                      </p>
-                      <p className="truncate text-xs text-ink-faint">
-                        {r.subjects.join(", ") || "—"}
-                      </p>
-                    </div>
-                    <Badge tone={r.status === "paid" ? "success" : "warning"}>
-                      {formatMoney(r.totalCents / 100)}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
           </Widget>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { hasSupabaseEnv } from "@/lib/supabase/env";
 import type {
   Announcement,
   Assignment,
@@ -164,6 +165,137 @@ export const getAdminOverview = cache(async (): Promise<AdminOverview | null> =>
     return null;
   }
 });
+
+export interface AdminDashboard {
+  activeUsers: number;
+  termCourses: { term: string; subjects: number; enrollments: number }[];
+  unreadMessages: number;
+  systemFlags: { label: string; ok: boolean }[];
+}
+
+/**
+ * Operations snapshot for the admin dashboard (D2L model): active-user count,
+ * per-term course/enrolment tallies, unread messages and environment health.
+ * Admin-gated like {@link getAdminOverview}; null for anyone else / on error so
+ * the dashboard degrades to its demo preview. System flags carry booleans only
+ * — never any key or value (mirrors /api/status).
+ */
+export const getAdminDashboard = cache(
+  async (): Promise<AdminDashboard | null> => {
+    const { authed, userId, role } = await getAuthState();
+    if (!authed || role !== "admin" || !userId) return null;
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) return null;
+    try {
+      const currentTerm = await getCurrentTerm();
+      const [users, enr, unread] = await Promise.all([
+        supabase.from("profiles").select("id", { count: "exact", head: true }),
+        supabase.from("subject_enrollments").select("subject_code, term"),
+        supabase
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("recipient_id", userId)
+          .is("read_at", null),
+      ]);
+
+      // Group enrolments by term → distinct subjects + row count.
+      const byTerm = new Map<string, { subjects: Set<string>; rows: number }>();
+      for (const r of (enr.data ?? []) as { subject_code: string; term: string }[]) {
+        const g = byTerm.get(r.term) ?? { subjects: new Set<string>(), rows: 0 };
+        g.subjects.add(r.subject_code);
+        g.rows += 1;
+        byTerm.set(r.term, g);
+      }
+      const termCourses = Array.from(byTerm.entries())
+        .map(([term, g]) => ({
+          term,
+          subjects: g.subjects.size,
+          enrollments: g.rows,
+        }))
+        // Current term first, then newest label; cap 3 (mirrors D2L).
+        .sort((a, b) => {
+          if (a.term === currentTerm) return -1;
+          if (b.term === currentTerm) return 1;
+          return b.term.localeCompare(a.term);
+        })
+        .slice(0, 3);
+      // Always surface the active term, even before any enrolments exist.
+      if (!termCourses.some((t) => t.term === currentTerm)) {
+        termCourses.unshift({ term: currentTerm, subjects: 0, enrollments: 0 });
+        termCourses.splice(3);
+      }
+
+      const systemFlags = [
+        { label: "Database", ok: hasSupabaseEnv() },
+        {
+          label: "Account provisioning",
+          ok: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+        },
+        { label: "Mo assistant", ok: Boolean(process.env.ANTHROPIC_API_KEY) },
+      ];
+
+      return {
+        activeUsers: users.count ?? 0,
+        termCourses,
+        unreadMessages: unread.count ?? 0,
+        systemFlags,
+      };
+    } catch {
+      return null;
+    }
+  },
+);
+
+export interface AdminEnrollment {
+  subjectCode: string;
+  role: Role;
+  userId: string;
+  name: string;
+}
+
+/**
+ * Every enrolment row for the current term joined (client-side) with the
+ * profiles an admin can read — the raw data behind the console's Enrollments
+ * view. Admin-gated; null for anyone else / on error.
+ */
+export const getAdminEnrollments = cache(
+  async (): Promise<AdminEnrollment[] | null> => {
+    const { authed, role } = await getAuthState();
+    if (!authed || role !== "admin") return null;
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) return null;
+    try {
+      const term = await getCurrentTerm();
+      const [enr, profs] = await Promise.all([
+        supabase
+          .from("subject_enrollments")
+          .select("subject_code, role, user_id")
+          .eq("term", term),
+        supabase.from("profiles").select("id, full_name, email"),
+      ]);
+      const names = new Map<string, string>();
+      for (const p of (profs.data ?? []) as {
+        id: string;
+        full_name: string | null;
+        email: string | null;
+      }[]) {
+        names.set(p.id, p.full_name || p.email || "");
+      }
+      return ((enr.data ?? []) as {
+        subject_code: string;
+        role: string;
+        user_id: string;
+      }[]).map((r) => ({
+        subjectCode: r.subject_code,
+        role: (r.role as Role) ?? "student",
+        userId: r.user_id,
+        name: names.get(r.user_id) ?? "",
+      }));
+    } catch {
+      return null;
+    }
+  },
+);
 
 export interface GuardianChild {
   id: string;

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen,
+  ChevronRight,
   ClipboardList,
   Download,
   GraduationCap,
@@ -24,14 +25,16 @@ import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin, roleLabel } from "@/lib/role";
 import { roster } from "@/lib/roster";
 import { formatMoney } from "@/lib/billing/pricing";
+import { subjects } from "@/lib/billing/subjects";
 import { formatDate, initialsOf } from "@/lib/utils";
-import type { AdminOverview } from "@/lib/data";
+import type { AdminEnrollment, AdminOverview } from "@/lib/data";
 import type { Assignment, Course } from "@/lib/types";
 
 export function AdminConsole({
   courses,
   assignments,
   overview,
+  enrollments,
   currentUserId,
   currentTerm,
 }: {
@@ -39,6 +42,8 @@ export function AdminConsole({
   assignments: Assignment[];
   /** Real institution data for a signed-in admin; null falls back to demo. */
   overview: AdminOverview | null;
+  /** Current-term enrolment rows for a signed-in admin; null falls back to demo. */
+  enrollments: AdminEnrollment[] | null;
   currentUserId?: string;
   /** The institution's active term (app_settings, migration 0029). */
   currentTerm: string;
@@ -113,6 +118,34 @@ export function AdminConsole({
   const instructorCount = overview
     ? overview.counts.instructors
     : Array.from(new Set(courses.map((c) => c.instructor))).length;
+
+  // Group the current-term enrolment rows by subject for the Enrollments view.
+  const enrollmentGroups = enrollments
+    ? (() => {
+        const byCode = new Map<
+          string,
+          { students: string[]; instructors: string[] }
+        >();
+        for (const e of enrollments) {
+          const g = byCode.get(e.subjectCode) ?? {
+            students: [],
+            instructors: [],
+          };
+          if (e.role === "instructor") g.instructors.push(e.name || "—");
+          else if (e.role === "student") g.students.push(e.name || "—");
+          byCode.set(e.subjectCode, g);
+        }
+        return Array.from(byCode.entries())
+          .map(([code, g]) => ({
+            code,
+            name: subjects.find((s) => s.code === code)?.name ?? code,
+            students: g.students.sort((a, b) => a.localeCompare(b)),
+            instructors: g.instructors,
+          }))
+          .filter((g) => g.students.length + g.instructors.length > 0)
+          .sort((a, b) => a.name.localeCompare(b.name));
+      })()
+    : [];
 
   return (
     <>
@@ -306,36 +339,130 @@ export function AdminConsole({
           )}
         </section>
       )}
+
+      {/* Enrollments — per-subject rosters for the active term */}
+      {enrollments && (
+        <section id="enrollments" className="mt-8 scroll-mt-24">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
+              Enrollments
+              <Badge tone="neutral">{enrollmentGroups.length}</Badge>
+            </h2>
+            <span className="text-xs text-ink-faint">Term {currentTerm}</span>
+          </div>
+          {enrollmentGroups.length === 0 ? (
+            <div className="card p-6 text-sm text-ink-muted">
+              No enrolments yet this term — assign subjects from the People list
+              or Import people.
+            </div>
+          ) : (
+            <div className="card divide-y divide-black/5">
+              {enrollmentGroups.map((g) => (
+                <details key={g.code} className="group">
+                  <summary className="focus-ring flex cursor-pointer list-none items-center gap-3 p-3 hover:bg-surface-subtle">
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-faint transition-transform group-open:rotate-90" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-ink">
+                        {g.name}
+                      </p>
+                      <p className="truncate text-xs text-ink-faint">
+                        {g.code} ·{" "}
+                        {g.instructors.length
+                          ? g.instructors.join(", ")
+                          : "No instructor assigned"}
+                      </p>
+                    </div>
+                    <Badge tone="neutral">
+                      {g.students.length} student
+                      {g.students.length === 1 ? "" : "s"}
+                    </Badge>
+                  </summary>
+                  <div className="px-3 pb-3 pl-10">
+                    {g.students.length === 0 ? (
+                      <p className="text-xs text-ink-faint">
+                        No students enrolled yet.
+                      </p>
+                    ) : (
+                      <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                        {g.students.map((name, i) => (
+                          <li
+                            key={`${g.code}-${i}`}
+                            className="truncate text-sm text-ink-muted"
+                          >
+                            {name}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Reports & processes — institution-wide CSV exports */}
+      {overview && (
+        <section id="reports" className="mt-8 scroll-mt-24">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-faint">
+            Reports &amp; processes
+          </h2>
+          <div className="card flex flex-wrap gap-2 p-4">
+            <ExportButton
+              label="People (CSV)"
+              onClick={() => exportPeopleCsv(overview.people)}
+              disabled={overview.people.length === 0}
+            />
+            <ExportButton
+              label="Enrolments (CSV)"
+              onClick={() =>
+                exportEnrollmentsCsv(enrollments ?? [], currentTerm)
+              }
+              disabled={(enrollments ?? []).length === 0}
+            />
+            <ExportButton
+              label="Registrations (CSV)"
+              onClick={() => exportRegistrationsCsv(overview.registrations)}
+              disabled={overview.registrations.length === 0}
+            />
+          </div>
+        </section>
+      )}
     </>
   );
 }
 
-/** Build a CSV from the registrations and trigger a browser download. */
-function exportRegistrationsCsv(
-  registrations: AdminOverview["registrations"],
+function ExportButton({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="focus-ring inline-flex h-9 items-center gap-1.5 rounded-lg border border-black/10 px-3 text-xs font-semibold text-ink hover:bg-surface-subtle disabled:opacity-40 dark:border-white/10"
+    >
+      <Download className="h-3.5 w-3.5" /> {label}
+    </button>
+  );
+}
+
+/** Escape, assemble and download a CSV (BOM-prefixed for Excel). */
+function downloadCsv(
+  slug: string,
+  header: string[],
+  rows: (string | number)[][],
 ): void {
   const esc = (v: string | number) => {
     const s = String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const header = [
-    "Invoice",
-    "Student",
-    "Email",
-    "Subjects",
-    "Total (ZAR)",
-    "Status",
-    "Date",
-  ];
-  const rows = registrations.map((r) => [
-    r.invoiceNo,
-    r.payerName,
-    r.payerEmail,
-    r.subjects.join("; "),
-    (r.totalCents / 100).toFixed(2),
-    r.status,
-    new Date(r.createdAt).toISOString().slice(0, 10),
-  ]);
   const csv = [header, ...rows]
     .map((row) => row.map(esc).join(","))
     .join("\r\n");
@@ -343,11 +470,57 @@ function exportRegistrationsCsv(
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `moacademy-registrations-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `moacademy-${slug}-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Build a CSV from the registrations and trigger a browser download. */
+function exportRegistrationsCsv(
+  registrations: AdminOverview["registrations"],
+): void {
+  downloadCsv(
+    "registrations",
+    ["Invoice", "Student", "Email", "Subjects", "Total (ZAR)", "Status", "Date"],
+    registrations.map((r) => [
+      r.invoiceNo,
+      r.payerName,
+      r.payerEmail,
+      r.subjects.join("; "),
+      (r.totalCents / 100).toFixed(2),
+      r.status,
+      new Date(r.createdAt).toISOString().slice(0, 10),
+    ]),
+  );
+}
+
+/** People roster export — name, email, role. */
+function exportPeopleCsv(people: AdminOverview["people"]): void {
+  downloadCsv(
+    "people",
+    ["Name", "Email", "Role"],
+    people.map((p) => [p.name, p.email, p.role]),
+  );
+}
+
+/** Current-term enrolments export — subject code, subject name, person, role, term. */
+function exportEnrollmentsCsv(
+  enrollments: AdminEnrollment[],
+  term: string,
+): void {
+  downloadCsv(
+    "enrolments",
+    ["Subject code", "Subject name", "Person", "Role", "Term"],
+    enrollments.map((e) => [
+      e.subjectCode,
+      subjects.find((s) => s.code === e.subjectCode)?.name ?? e.subjectCode,
+      e.name,
+      e.role,
+      term,
+    ]),
+  );
 }
 
 function Stat({
