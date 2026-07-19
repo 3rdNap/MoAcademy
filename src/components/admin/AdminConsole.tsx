@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { AddPersonButton } from "@/components/admin/AddPersonButton";
+import { ImportPeopleButton } from "@/components/admin/ImportPeopleButton";
 import { ManageSubjectsButton } from "@/components/admin/ManageSubjectsButton";
 import { ResetPasswordButton } from "@/components/admin/ResetPasswordButton";
 import { TermControl } from "@/components/admin/TermControl";
@@ -193,7 +194,10 @@ export function AdminConsole({
               People
               {overview && <Badge tone="neutral">{overview.people.length}</Badge>}
             </h2>
-            <AddPersonButton enabled={roleMgmt} />
+            <div className="flex items-center gap-2">
+              <ImportPeopleButton enabled={roleMgmt} />
+              <AddPersonButton enabled={roleMgmt} />
+            </div>
           </div>
           {overview && overview.people.length > 5 && (
             <div className="relative mb-2">

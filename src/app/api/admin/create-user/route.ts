@@ -1,66 +1,18 @@
 import { NextResponse } from "next/server";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { slugifyName, tempPassword, uniqueEmail } from "@/lib/admin/provision";
 
 export const runtime = "nodejs";
 
 const ROLES = ["student", "instructor", "admin", "parent"] as const;
 type RoleValue = (typeof ROLES)[number];
 
-/** The institution's login domain. Addresses are sign-in identities, not (yet)
- *  real mailboxes — see the account-provisioning docs. */
-const EMAIL_DOMAIN = "moacademy.com";
-
 interface CreateUserRequest {
   fullName: string;
   role: RoleValue;
   guardianName?: string;
   guardianEmail?: string;
-}
-
-/** first.last from a display name, accent- and punctuation-stripped. */
-function slugifyName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9\s.-]/g, "")
-    .replace(/[\s_]+/g, ".")
-    .replace(/\.+/g, ".")
-    .replace(/^\.|\.$/g, "");
-}
-
-/** A readable temporary password: two words + digits, easy to relay. */
-function tempPassword(): string {
-  const words = [
-    "Maple", "River", "Solar", "Cedar", "Falcon", "Harbor",
-    "Meadow", "Comet", "Orchid", "Summit", "Aspen", "Delta",
-  ];
-  const w = () => words[Math.floor(Math.random() * words.length)];
-  return `${w()}-${w()}-${Math.floor(1000 + Math.random() * 9000)}`;
-}
-
-/** Find the first free name@moacademy.com, appending a number on collision. */
-async function uniqueEmail(
-  admin: SupabaseClient,
-  base: string,
-): Promise<string> {
-  const safeBase = base || "user";
-  const { data } = await admin
-    .from("profiles")
-    .select("email")
-    .ilike("email", `${safeBase}%@${EMAIL_DOMAIN}`);
-  const taken = new Set(
-    (data ?? []).map((r) => String(r.email).toLowerCase()),
-  );
-  let candidate = `${safeBase}@${EMAIL_DOMAIN}`;
-  let n = 1;
-  while (taken.has(candidate)) {
-    n += 1;
-    candidate = `${safeBase}${n}@${EMAIL_DOMAIN}`;
-  }
-  return candidate;
 }
 
 /**
