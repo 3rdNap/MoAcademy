@@ -114,6 +114,56 @@ export async function fetchAnswerKeys(
   }
 }
 
+export interface QuizSource {
+  assignmentId: string;
+  title: string;
+  courseKey: string;
+  count: number;
+}
+
+/** Discover other quizzes the instructor can import from: every assignment
+ * that has quiz_questions (embedding its title + course), grouped and counted,
+ * minus the current one. quiz_questions are publicly readable, so the caller
+ * must still gate teachability by probing fetchAnswerKeys at import time. Null
+ * on any failure. */
+export async function fetchMyQuizSources(
+  excludeAssignmentId: string,
+): Promise<QuizSource[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("quiz_questions")
+      .select("assignment_id, assignments(title, course_key)");
+    if (error || !data) return null;
+    type Row = {
+      assignment_id: string;
+      // PostgREST types a to-one embed as an array in the generated shape.
+      assignments: { title: string; course_key: string } | { title: string; course_key: string }[] | null;
+    };
+    const byAssignment = new Map<string, QuizSource>();
+    for (const r of data as unknown as Row[]) {
+      if (r.assignment_id === excludeAssignmentId) continue;
+      const embed = Array.isArray(r.assignments) ? r.assignments[0] : r.assignments;
+      if (!embed) continue;
+      const existing = byAssignment.get(r.assignment_id);
+      if (existing) existing.count += 1;
+      else
+        byAssignment.set(r.assignment_id, {
+          assignmentId: r.assignment_id,
+          title: embed.title,
+          courseKey: embed.course_key,
+          count: 1,
+        });
+    }
+    return [...byAssignment.values()].sort((a, b) =>
+      a.title.localeCompare(b.title),
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Add a question then its answer key, as the assignment's teaching account.
  * If the key write fails the question is rolled back so no keyless question is
  * left behind. Null when refused. */

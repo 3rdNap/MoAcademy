@@ -14,6 +14,7 @@ import { Widget } from "@/components/ui/Widget";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { daysUntil, formatDate, formatDateTime, letterGrade } from "@/lib/utils";
+import { MoFamilySummary } from "@/components/family/MoFamilySummary";
 import type { Announcement, Assignment, Course } from "@/lib/types";
 import type {
   ChildAttendance,
@@ -221,6 +222,15 @@ export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) 
 
         {/* Right column */}
         <div className="space-y-6">
+          <MoFamilySummary
+            key={child.id}
+            childName={child.name}
+            courses={courses}
+            grades={grades}
+            attendance={attendance}
+            upcoming={upcoming}
+          />
+
           <Widget
             title="Upcoming deadlines"
             icon={<CalendarClock className="h-4 w-4 text-brand-600" />}
