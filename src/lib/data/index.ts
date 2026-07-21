@@ -1323,6 +1323,36 @@ export async function getMyCourseGrades(): Promise<ChildCourseGrade[]> {
   return courseGradesFor(userId);
 }
 
+export interface MyAward {
+  icon: string;
+  name: string;
+}
+
+/** Badges the signed-in user has earned (both course and institution badges),
+ *  newest first — a compact recognition row for the report card (migration
+ *  0037). Empty when signed out or on any error. */
+export async function getMyAwards(): Promise<MyAward[]> {
+  const { authed, userId } = await getAuthState();
+  if (!authed || !userId) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("badge_awards")
+      .select("awarded_at, badges(icon, name)")
+      .eq("student_id", userId)
+      .order("awarded_at", { ascending: false });
+    const rows = (data ?? []) as unknown as {
+      badges: { icon: string; name: string } | null;
+    }[];
+    return rows
+      .filter((r) => r.badges)
+      .map((r) => ({ icon: r.badges!.icon, name: r.badges!.name }));
+  } catch {
+    return [];
+  }
+}
+
 export interface ChildAttendance {
   present: number;
   absent: number;
