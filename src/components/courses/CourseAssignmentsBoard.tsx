@@ -29,6 +29,7 @@ import {
   fetchRemoteAssignments,
   removeAssignmentGroup,
   removeRemoteAssignment,
+  setQuizAttemptsAllowed,
   updateAssignmentGroup,
   updateRemoteAssignment,
   type AssignmentGroup,
@@ -55,7 +56,9 @@ import {
   removeQuizQuestion,
   submitQuizAttempt,
   updateQuizQuestion,
+  type QuizAnswer,
   type QuizAttempt,
+  type QuizAttemptResult,
   type QuizQuestion,
   type QuizSource,
 } from "@/lib/quiz-db";
@@ -261,15 +264,18 @@ export function CourseAssignmentsBoard({
     };
   }, [remote, teaching]);
 
-  // My own quiz attempts (one per assignment), keyed by assignment id. Drives
-  // the student-side Take/Review action for quiz rows. Real signed-in only.
-  const [attempts, setAttempts] = useState<Record<string, QuizAttempt>>({});
+  // My own quiz attempts (multiple allowed now), keyed by assignment id and
+  // ordered by attempt number. Drives the student-side Take/Retake/Review
+  // action for quiz rows. Real signed-in only.
+  const [attempts, setAttempts] = useState<Record<string, QuizAttempt[]>>({});
   useEffect(() => {
     if (!remote || remote.length === 0 || !signedIn) return;
     let alive = true;
     fetchMyAttempts(remote.map((a) => a.id)).then((list) => {
       if (!alive || !list) return;
-      setAttempts(Object.fromEntries(list.map((at) => [at.assignmentId, at])));
+      const byAssignment: Record<string, QuizAttempt[]> = {};
+      for (const at of list) (byAssignment[at.assignmentId] ??= []).push(at);
+      setAttempts(byAssignment);
     });
     return () => {
       alive = false;
@@ -284,21 +290,21 @@ export function CourseAssignmentsBoard({
     (questions[a.id]?.length ?? 0) > 0;
 
   // Take/review-quiz modal (students). takeReview = read-only past attempt;
-  // takeResult holds the just-submitted grade breakdown.
+  // takeResult holds the just-submitted grade breakdown; reviewIdx selects which
+  // past attempt is shown when several exist.
   const [takeFor, setTakeFor] = useState<Assignment | null>(null);
-  const [takeAnswers, setTakeAnswers] = useState<Record<string, number>>({});
-  const [takeResult, setTakeResult] = useState<{
-    earned: number;
-    total: number;
-    score: number;
-    points: number;
-    correct: string[];
-  } | null>(null);
+  const [takeAnswers, setTakeAnswers] = useState<Record<string, QuizAnswer>>({});
+  const [takeResult, setTakeResult] = useState<QuizAttemptResult | null>(null);
   const [takeReview, setTakeReview] = useState(false);
+  const [reviewIdx, setReviewIdx] = useState(0);
   const [takeBusy, setTakeBusy] = useState(false);
   const takeQuestions = takeFor ? questions[takeFor.id] ?? [] : [];
+  const attemptsFor = (aid: string) => attempts[aid] ?? [];
+  const reviewAttempts = takeFor ? attemptsFor(takeFor.id) : [];
+  const isAnswered = (v: QuizAnswer | undefined) =>
+    v !== undefined && v !== "";
   const takeUnanswered = takeQuestions.filter(
-    (q) => takeAnswers[q.id] === undefined,
+    (q) => !isAnswered(takeAnswers[q.id]),
   ).length;
   const correctSet = takeResult ? new Set(takeResult.correct) : null;
 
@@ -307,15 +313,24 @@ export function CourseAssignmentsBoard({
     setTakeAnswers({});
     setTakeResult(null);
     setTakeReview(false);
+    setReviewIdx(0);
     setTakeBusy(false);
   }
 
   function openReviewQuiz(a: Assignment) {
+    const list = attemptsFor(a.id);
+    const idx = Math.max(0, list.length - 1); // latest by default
     setTakeFor(a);
-    setTakeAnswers(attempts[a.id]?.answers ?? {});
+    setTakeAnswers(list[idx]?.answers ?? {});
     setTakeResult(null);
     setTakeReview(true);
+    setReviewIdx(idx);
     setTakeBusy(false);
+  }
+
+  function selectReviewAttempt(idx: number) {
+    setReviewIdx(idx);
+    setTakeAnswers(reviewAttempts[idx]?.answers ?? {});
   }
 
   function resetTake() {
@@ -323,6 +338,7 @@ export function CourseAssignmentsBoard({
     setTakeAnswers({});
     setTakeResult(null);
     setTakeReview(false);
+    setReviewIdx(0);
     setTakeBusy(false);
   }
 
@@ -332,24 +348,28 @@ export function CourseAssignmentsBoard({
     const result = await submitQuizAttempt(takeFor.id, takeAnswers);
     setTakeBusy(false);
     if (!result) {
-      setPubNote("Couldn't submit the quiz — try again.");
+      setPubNote("Couldn't submit the quiz — no attempts left, or try again.");
       return;
     }
     setTakeResult(result);
-    // The RPC recorded the attempt and upserted a graded submission; mirror both
-    // locally so the row shows Graded + score without a refetch.
+    // The RPC recorded the attempt and upserted the submission; mirror both
+    // locally so the row + score update without a refetch.
     const aid = takeFor.id;
     setAttempts((prev) => ({
       ...prev,
-      [aid]: {
-        id: prev[aid]?.id ?? aid,
-        assignmentId: aid,
-        studentId: prev[aid]?.studentId ?? "",
-        submittedAt: new Date().toISOString(),
-        score: result.earned,
-        total: result.total,
-        answers: takeAnswers,
-      },
+      [aid]: [
+        ...(prev[aid] ?? []),
+        {
+          id: `${aid}-${result.attemptNo}`,
+          assignmentId: aid,
+          studentId: (prev[aid]?.[0]?.studentId) ?? "",
+          submittedAt: new Date().toISOString(),
+          score: result.earned,
+          total: result.total,
+          answers: takeAnswers,
+          attemptNo: result.attemptNo,
+        },
+      ],
     }));
     setMySubs((prev) => ({
       ...prev,
@@ -358,7 +378,8 @@ export function CourseAssignmentsBoard({
         assignmentId: aid,
         userId: prev[aid]?.userId ?? "",
         body: prev[aid]?.body ?? "",
-        status: "graded",
+        // Written pending → 'submitted' (teacher grades); fully auto → 'graded'.
+        status: result.pendingWritten ? "submitted" : "graded",
         score: result.score,
       },
     }));
@@ -366,42 +387,75 @@ export function CourseAssignmentsBoard({
 
   // Manage-quiz modal (teaching accounts, real signed-in mode only).
   const [quizFor, setQuizFor] = useState<Assignment | null>(null);
+  const [newQKind, setNewQKind] = useState<"mcq" | "written">("mcq");
   const [newQPrompt, setNewQPrompt] = useState("");
   const [newQOptions, setNewQOptions] = useState<string[]>(["", "", "", ""]);
   const [newQCorrect, setNewQCorrect] = useState(0);
   const [newQPoints, setNewQPoints] = useState(1);
   const quizList = quizFor ? questions[quizFor.id] ?? [] : [];
-  const quizTotal = quizList.reduce((n, q) => n + q.points, 0);
+  const autoTotal = quizList
+    .filter((q) => q.kind !== "written")
+    .reduce((n, q) => n + q.points, 0);
+  const writtenTotal = quizList
+    .filter((q) => q.kind === "written")
+    .reduce((n, q) => n + q.points, 0);
   const keysUnavailable = answerKeys === null;
+  // Attempts-allowed (1-10) — the number lives on the assignment row itself, so
+  // read from the currently-open quiz assignment and persist optimistically.
+  const quizAttemptsAllowed = quizFor?.attemptsAllowed ?? 1;
 
   function resetQuizForm() {
+    setNewQKind("mcq");
     setNewQPrompt("");
     setNewQOptions(["", "", "", ""]);
     setNewQCorrect(0);
     setNewQPoints(1);
   }
 
+  async function setAttemptsAllowed(n: number) {
+    if (!quizFor) return;
+    const clamped = Math.max(1, Math.min(10, n));
+    const aid = quizFor.id;
+    // Optimistically update both the open modal's assignment and the row list.
+    setQuizFor((prev) => (prev ? { ...prev, attemptsAllowed: clamped } : prev));
+    setRemote((prev) =>
+      (prev ?? []).map((a) =>
+        a.id === aid ? { ...a, attemptsAllowed: clamped } : a,
+      ),
+    );
+    if (!(await setQuizAttemptsAllowed(aid, clamped))) {
+      setPubNote(
+        "Couldn't change the attempt limit (teaching account required).",
+      );
+    }
+  }
+
   async function addQuestion() {
     if (!quizFor) return;
     const prompt = newQPrompt.trim();
+    const written = newQKind === "written";
     const options = newQOptions.map((o) => o.trim());
-    if (!prompt || options.some((o) => !o)) return;
+    if (!prompt) return;
+    if (!written && options.some((o) => !o)) return;
     const created = await addQuizQuestion(quizFor.id, {
       prompt,
       options,
       correctIndex: Math.min(newQCorrect, options.length - 1),
       points: Math.max(1, newQPoints),
       position: quizList.length,
+      kind: newQKind,
     });
     if (created) {
       setQuestions((prev) => ({
         ...prev,
         [quizFor.id]: [...(prev[quizFor.id] ?? []), created],
       }));
-      setAnswerKeys((prev) => ({
-        ...(prev ?? {}),
-        [created.id]: Math.min(newQCorrect, options.length - 1),
-      }));
+      if (!written) {
+        setAnswerKeys((prev) => ({
+          ...(prev ?? {}),
+          [created.id]: Math.min(newQCorrect, options.length - 1),
+        }));
+      }
       resetQuizForm();
     } else {
       setPubNote("Couldn't add the question (teaching account required).");
@@ -479,23 +533,27 @@ export function CourseAssignmentsBoard({
     if (!quizFor || importChecked.size === 0 || importBusy) return;
     setImportBusy(true);
     const selected = importQuestions.filter((q) => importChecked.has(q.id));
-    // One key fetch for all selected ids; a null/missing key means the source
-    // isn't teachable by this account — skip and count those questions.
-    const keys = await fetchAnswerKeys(selected.map((q) => q.id));
+    // One key fetch for the MCQ ids; a missing key on an MCQ means the source
+    // isn't teachable by this account — skip and count those. Written questions
+    // have no key by design, so they're always importable.
+    const mcqIds = selected.filter((q) => q.kind !== "written").map((q) => q.id);
+    const keys = await fetchAnswerKeys(mcqIds);
     let nextPos = quizList.length;
     let failed = 0;
     for (const q of selected) {
-      const correctIndex = keys?.[q.id];
-      if (correctIndex === undefined) {
+      const written = q.kind === "written";
+      const correctIndex = written ? -1 : keys?.[q.id];
+      if (!written && correctIndex === undefined) {
         failed += 1;
         continue;
       }
       const created = await addQuizQuestion(quizFor.id, {
         prompt: q.prompt,
         options: q.options,
-        correctIndex,
+        correctIndex: correctIndex ?? 0,
         points: q.points,
         position: nextPos,
+        kind: q.kind,
       });
       if (created) {
         nextPos += 1;
@@ -503,7 +561,12 @@ export function CourseAssignmentsBoard({
           ...prev,
           [quizFor.id]: [...(prev[quizFor.id] ?? []), created],
         }));
-        setAnswerKeys((prev) => ({ ...(prev ?? {}), [created.id]: correctIndex }));
+        if (!written && correctIndex !== undefined) {
+          setAnswerKeys((prev) => ({
+            ...(prev ?? {}),
+            [created.id]: correctIndex,
+          }));
+        }
       } else {
         failed += 1;
       }
@@ -892,31 +955,52 @@ export function CourseAssignmentsBoard({
                   );
                 })()}
                 {!teaching &&
-                  (isTakeableQuiz(a) ? (
-                    attempts[a.id] ? (
-                      <button
-                        type="button"
-                        onClick={() => openReviewQuiz(a)}
-                        className="focus-ring rounded-md px-2 py-1 text-sm font-medium text-brand-600 hover:text-brand-700"
-                      >
-                        Review quiz
-                      </button>
-                    ) : (
-                      <Button size="sm" onClick={() => openTakeQuiz(a)}>
-                        Take quiz
-                      </Button>
-                    )
-                  ) : (
-                    status !== "graded" && (
-                      <Button
-                        size="sm"
-                        variant={sub ? "outline" : "primary"}
-                        onClick={() => openSubmit(a)}
-                      >
-                        {sub ? "Resubmit" : "Submit"}
-                      </Button>
-                    )
-                  ))}
+                  (isTakeableQuiz(a)
+                    ? (() => {
+                        const count = attemptsFor(a.id).length;
+                        const allowed = a.attemptsAllowed ?? 1;
+                        if (count === 0) {
+                          return (
+                            <Button size="sm" onClick={() => openTakeQuiz(a)}>
+                              Take quiz
+                            </Button>
+                          );
+                        }
+                        if (count < allowed) {
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openReviewQuiz(a)}
+                                className="focus-ring rounded-md px-2 py-1 text-sm font-medium text-brand-600 hover:text-brand-700"
+                              >
+                                Review
+                              </button>
+                              <Button size="sm" onClick={() => openTakeQuiz(a)}>
+                                Retake quiz ({count} of {allowed} used)
+                              </Button>
+                            </>
+                          );
+                        }
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => openReviewQuiz(a)}
+                            className="focus-ring rounded-md px-2 py-1 text-sm font-medium text-brand-600 hover:text-brand-700"
+                          >
+                            Review quiz
+                          </button>
+                        );
+                      })()
+                    : status !== "graded" && (
+                        <Button
+                          size="sm"
+                          variant={sub ? "outline" : "primary"}
+                          onClick={() => openSubmit(a)}
+                        >
+                          {sub ? "Resubmit" : "Submit"}
+                        </Button>
+                      ))}
                 {teaching &&
                   (source === "local" || (source === "remote" && signedIn)) && (
                   <div className="flex gap-1">
@@ -1336,7 +1420,7 @@ export function CourseAssignmentsBoard({
           resetImport();
         }}
         title={`Quiz questions · ${quizFor?.title ?? ""}`}
-        description="Author multiple-choice questions. Students take one auto-graded attempt."
+        description="Author multiple-choice or written questions. MCQ auto-grades; written answers you grade in the gradebook."
         footer={
           importOpen ? (
             <>
@@ -1483,7 +1567,15 @@ export function CourseAssignmentsBoard({
               className="space-y-3 rounded-lg border border-black/5 p-3"
             >
               <div className="flex items-start gap-2">
-                <Field label={`Question ${qi + 1}`} className="flex-1">
+                <Field
+                  label={`Question ${qi + 1}`}
+                  className="flex-1"
+                >
+                  {q.kind === "written" && (
+                    <div className="mb-1.5">
+                      <Badge tone="info">Written</Badge>
+                    </div>
+                  )}
                   <Textarea
                     value={q.prompt}
                     onChange={(e) =>
@@ -1526,6 +1618,11 @@ export function CourseAssignmentsBoard({
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
+              {q.kind === "written" ? (
+                <p className="text-xs text-ink-faint">
+                  Answered in free text — you grade it in the gradebook.
+                </p>
+              ) : (
               <div className="space-y-1.5">
                 {q.options.map((opt, oi) => (
                   <label
@@ -1567,10 +1664,40 @@ export function CourseAssignmentsBoard({
                   </label>
                 ))}
               </div>
+              )}
             </div>
           ))}
 
           <div className="space-y-3 border-t border-black/5 pt-4">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setNewQKind("mcq")}
+                className={`focus-ring rounded-lg border px-3 py-1.5 text-sm font-medium ${
+                  newQKind === "mcq"
+                    ? "border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-500/40 dark:bg-brand-500/10 dark:text-brand-300"
+                    : "border-black/10 text-ink-muted hover:bg-surface-subtle"
+                }`}
+              >
+                Multiple choice
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewQKind("written")}
+                className={`focus-ring rounded-lg border px-3 py-1.5 text-sm font-medium ${
+                  newQKind === "written"
+                    ? "border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-500/40 dark:bg-brand-500/10 dark:text-brand-300"
+                    : "border-black/10 text-ink-muted hover:bg-surface-subtle"
+                }`}
+              >
+                Written response
+              </button>
+            </div>
+            {newQKind === "written" && (
+              <p className="text-xs text-ink-faint">
+                Answered in free text — you grade it in the gradebook.
+              </p>
+            )}
             <Field label="Add question">
               <Textarea
                 value={newQPrompt}
@@ -1579,6 +1706,7 @@ export function CourseAssignmentsBoard({
                 className="min-h-[60px]"
               />
             </Field>
+            {newQKind === "mcq" && (
             <div className="space-y-1.5">
               {newQOptions.map((opt, oi) => (
                 <div key={oi} className="flex items-center gap-2">
@@ -1621,8 +1749,9 @@ export function CourseAssignmentsBoard({
                 </div>
               ))}
             </div>
+            )}
             <div className="flex items-end gap-2">
-              {newQOptions.length < 6 && (
+              {newQKind === "mcq" && newQOptions.length < 6 && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -1646,7 +1775,7 @@ export function CourseAssignmentsBoard({
                 onClick={addQuestion}
                 disabled={
                   !newQPrompt.trim() ||
-                  newQOptions.some((o) => !o.trim())
+                  (newQKind === "mcq" && newQOptions.some((o) => !o.trim()))
                 }
               >
                 <Plus className="h-4 w-4" /> Add question
@@ -1654,10 +1783,24 @@ export function CourseAssignmentsBoard({
             </div>
           </div>
 
-          <p className="text-xs text-ink-faint">
-            {quizList.length} questions · {quizTotal} pts total · auto-graded out
-            of {quizFor?.points ?? 0}.
-          </p>
+          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-black/5 pt-4">
+            <p className="text-xs text-ink-faint">
+              {quizList.length} questions ·{" "}
+              {writtenTotal > 0
+                ? `${autoTotal} pts auto + ${writtenTotal} pts written`
+                : `${autoTotal} pts total, auto-graded`}{" "}
+              · out of {quizFor?.points ?? 0}.
+            </p>
+            <Field label="Attempts allowed" className="w-32">
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                value={quizAttemptsAllowed}
+                onChange={(e) => setAttemptsAllowed(Number(e.target.value) || 1)}
+              />
+            </Field>
+          </div>
         </div>
         )}
       </Modal>
@@ -1692,11 +1835,46 @@ export function CourseAssignmentsBoard({
         }
       >
         <div className="space-y-5">
-          {takeResult && (
-            <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
-              Score: {takeResult.earned}/{takeResult.total} ·{" "}
-              {takeResult.score}/{takeResult.points} pts
-            </div>
+          {takeResult &&
+            (takeResult.pendingWritten ? (
+              <div className="rounded-lg bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 dark:bg-brand-500/10 dark:text-brand-300">
+                Written answers submitted — your teacher grades those. Auto-marked
+                portion: {takeResult.earned}/{takeResult.total}.
+              </div>
+            ) : (
+              <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
+                Score: {takeResult.earned}/{takeResult.total} ·{" "}
+                {takeResult.score}/{takeResult.points} pts
+                {(() => {
+                  const thisScaled = takeResult.total
+                    ? Math.round(
+                        (takeResult.earned / takeResult.total) *
+                          takeResult.points,
+                      )
+                    : 0;
+                  return takeResult.score !== null &&
+                    thisScaled !== takeResult.score ? (
+                    <span className="mt-1 block text-xs font-normal">
+                      Best attempt counts: your recorded score is{" "}
+                      {takeResult.score}/{takeResult.points}.
+                    </span>
+                  ) : null;
+                })()}
+              </div>
+            ))}
+          {takeReview && reviewAttempts.length > 1 && (
+            <Field label="Attempt">
+              <Select
+                value={reviewIdx}
+                onChange={(e) => selectReviewAttempt(Number(e.target.value))}
+              >
+                {reviewAttempts.map((at, i) => (
+                  <option key={at.id} value={i}>
+                    Attempt {at.attemptNo} · {at.score}/{at.total}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           )}
           {takeReview && (
             <p className="text-xs text-ink-faint">
@@ -1705,6 +1883,7 @@ export function CourseAssignmentsBoard({
           )}
           {takeQuestions.map((q, qi) => {
             const chosen = takeAnswers[q.id];
+            const written = q.kind === "written";
             const isCorrect = correctSet?.has(q.id);
             const locked = takeResult !== null || takeReview;
             return (
@@ -1714,6 +1893,7 @@ export function CourseAssignmentsBoard({
               >
                 <div className="flex items-start gap-2">
                   {takeResult &&
+                    !written &&
                     (isCorrect ? (
                       <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                     ) : (
@@ -1722,37 +1902,59 @@ export function CourseAssignmentsBoard({
                   <p className="flex-1 text-sm font-medium text-ink">
                     {qi + 1}. {q.prompt}
                     <span className="ml-1 font-normal text-ink-faint">
-                      ({q.points} pts)
+                      ({q.points} pts){written ? " · written" : ""}
                     </span>
                   </p>
                 </div>
-                <div className="space-y-1.5">
-                  {q.options.map((opt, oi) => {
-                    const picked = chosen === oi;
-                    return (
-                      <label
-                        key={oi}
-                        className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm ${
-                          picked
-                            ? "bg-brand-50 text-ink dark:bg-brand-500/10"
-                            : "text-ink-muted"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name={`take-${q.id}`}
-                          className="focus-ring"
-                          checked={picked}
-                          disabled={locked}
-                          onChange={() =>
-                            setTakeAnswers((prev) => ({ ...prev, [q.id]: oi }))
-                          }
-                        />
-                        {opt}
-                      </label>
-                    );
-                  })}
-                </div>
+                {written ? (
+                  <>
+                    <Textarea
+                      value={typeof chosen === "string" ? chosen : ""}
+                      disabled={locked}
+                      onChange={(e) =>
+                        setTakeAnswers((prev) => ({
+                          ...prev,
+                          [q.id]: e.target.value,
+                        }))
+                      }
+                      placeholder="Type your answer…"
+                      className="min-h-[80px]"
+                    />
+                    {locked && (
+                      <p className="text-xs text-ink-faint">
+                        Graded by your teacher.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-1.5">
+                    {q.options.map((opt, oi) => {
+                      const picked = chosen === oi;
+                      return (
+                        <label
+                          key={oi}
+                          className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm ${
+                            picked
+                              ? "bg-brand-50 text-ink dark:bg-brand-500/10"
+                              : "text-ink-muted"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={`take-${q.id}`}
+                            className="focus-ring"
+                            checked={picked}
+                            disabled={locked}
+                            onChange={() =>
+                              setTakeAnswers((prev) => ({ ...prev, [q.id]: oi }))
+                            }
+                          />
+                          {opt}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1761,7 +1963,8 @@ export function CourseAssignmentsBoard({
               {takeUnanswered > 0
                 ? `${takeUnanswered} of ${takeQuestions.length} unanswered.`
                 : "All questions answered."}{" "}
-              You get one attempt — it&apos;s graded automatically.
+              MCQ answers are graded automatically; written answers go to your
+              teacher.
             </p>
           )}
         </div>
