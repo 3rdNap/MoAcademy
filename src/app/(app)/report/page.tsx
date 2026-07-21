@@ -9,6 +9,7 @@ import {
   getCurrentTerm,
   getCurrentUser,
   getMyAttendance,
+  getMyAwards,
   getMyCourseGrades,
 } from "@/lib/data";
 
@@ -48,11 +49,12 @@ export default async function ReportPage() {
     );
   }
 
-  const [user, courses, grades, attendance, term] = await Promise.all([
+  const [user, courses, grades, attendance, awards, term] = await Promise.all([
     getCurrentUser(),
     getCourses(),
     getMyCourseGrades(),
     getMyAttendance(),
+    getMyAwards(),
     getCurrentTerm(),
   ]);
 
@@ -71,6 +73,7 @@ export default async function ReportPage() {
         courses={courses}
         grades={grades}
         attendance={attendance}
+        awards={awards}
         issuedAt={new Date().toISOString()}
       />
     </>

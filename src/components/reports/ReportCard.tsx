@@ -1,5 +1,5 @@
 import type { Course } from "@/lib/types";
-import type { ChildAttendance, ChildCourseGrade } from "@/lib/data";
+import type { ChildAttendance, ChildCourseGrade, MyAward } from "@/lib/data";
 import { formatDate, letterGrade } from "@/lib/utils";
 
 /**
@@ -16,6 +16,7 @@ export function ReportCard({
   courses,
   grades,
   attendance,
+  awards = [],
   issuedAt,
 }: {
   studentName: string;
@@ -23,6 +24,7 @@ export function ReportCard({
   courses: Course[];
   grades: ChildCourseGrade[];
   attendance: ChildAttendance;
+  awards?: MyAward[];
   issuedAt: string;
 }) {
   const gradesByCourse = new Map(grades.map((g) => [g.courseId, g]));
@@ -157,6 +159,26 @@ export function ReportCard({
           <AttendanceStat label="Rate" value={attRate != null ? `${attRate}%` : "—"} />
         </div>
       </div>
+
+      {/* Awards (migration 0037) — only shown when the student has earned any. */}
+      {awards.length > 0 && (
+        <div className="mt-8">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint print:text-black">
+            Awards
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {awards.map((a, i) => (
+              <li
+                key={`${a.name}-${i}`}
+                className="flex items-center gap-1.5 rounded-full border border-black/10 px-3 py-1 text-sm text-ink print:border-black print:text-black"
+              >
+                <span aria-hidden>{a.icon}</span>
+                <span>{a.name}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Footer note */}
       <p className="mt-8 border-t border-black/10 pt-4 text-xs text-ink-faint print:border-black print:text-black">
