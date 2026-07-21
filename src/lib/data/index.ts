@@ -707,6 +707,7 @@ interface RawAssignment {
   available_at: string | null;
   points: number;
   group_id?: string | null;
+  quiz_attempts_allowed?: number | null;
 }
 function mapAssignment(r: RawAssignment): Assignment {
   return {
@@ -720,6 +721,7 @@ function mapAssignment(r: RawAssignment): Assignment {
     availableAt: r.available_at ?? undefined,
     points: r.points,
     groupId: r.group_id ?? undefined,
+    attemptsAllowed: r.quiz_attempts_allowed ?? undefined,
     status: "not_started",
   };
 }

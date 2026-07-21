@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Field, Input, Textarea } from "@/components/ui/form";
+import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection } from "@/lib/local-store";
@@ -400,10 +400,11 @@ function InstructorGradebook({
     };
   }, [realMode, assignments]);
 
-  // Quiz attempts keyed by `${studentId}__${assignmentId}`, the quiz questions
-  // per assignment, and answer keys (question id → correct index). Teachers can
-  // read keys, so the review modal marks each answer correct/incorrect.
-  const [attempts, setAttempts] = useState<Record<string, QuizAttempt>>({});
+  // Quiz attempts keyed by `${studentId}__${assignmentId}` → all attempts for
+  // that cell (multiple allowed now), ordered by attempt number. Plus the quiz
+  // questions per assignment and answer keys (question id → correct index).
+  // Teachers can read keys, so the review modal marks each MCQ correct/wrong.
+  const [attempts, setAttempts] = useState<Record<string, QuizAttempt[]>>({});
   const [questions, setQuestions] = useState<Record<string, QuizQuestion[]>>({});
   const [answerKeys, setAnswerKeys] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -412,11 +413,12 @@ function InstructorGradebook({
     const ids = assignments.map((a) => a.id);
     fetchAttemptsForAssignments(ids).then((list) => {
       if (!alive || !list) return;
-      setAttempts(
-        Object.fromEntries(
-          list.map((at) => [cellId(at.studentId, at.assignmentId), at]),
-        ),
-      );
+      const byCell: Record<string, QuizAttempt[]> = {};
+      for (const at of list)
+        (byCell[cellId(at.studentId, at.assignmentId)] ??= []).push(at);
+      for (const key of Object.keys(byCell))
+        byCell[key].sort((a, b) => a.attemptNo - b.attemptNo);
+      setAttempts(byCell);
     });
     fetchQuizQuestions(ids).then((qs) => {
       if (!alive || !qs) return;
@@ -501,6 +503,9 @@ function InstructorGradebook({
   );
   const [reviewScore, setReviewScore] = useState("");
   const [reviewFeedback, setReviewFeedback] = useState("");
+  // Which attempt the review modal shows (index into the cell's sorted list);
+  // defaults to the latest when the modal opens.
+  const [reviewAttemptIdx, setReviewAttemptIdx] = useState(0);
 
   /** Fetch a short-lived signed URL for a submission attachment and open it. */
   async function openAttachment(path: string) {
@@ -510,9 +515,11 @@ function InstructorGradebook({
 
   function openReview(sid: string, aid: string) {
     const sub = realSubs[cellId(sid, aid)];
+    const list = attempts[cellId(sid, aid)] ?? [];
     setReviewCell({ sid, aid });
     setReviewScore(sub?.score != null ? String(sub.score) : "");
     setReviewFeedback(sub?.feedback ?? "");
+    setReviewAttemptIdx(Math.max(0, list.length - 1)); // latest by default
   }
 
   const reviewAssignment = reviewCell
@@ -530,10 +537,15 @@ function InstructorGradebook({
       )
     : 0;
   const reviewRubricPossible = reviewCriteria.reduce((n, c) => n + c.points, 0);
-  const reviewAttempt = reviewCell
-    ? attempts[cellId(reviewCell.sid, reviewCell.aid)]
-    : undefined;
+  const reviewAttemptList = reviewCell
+    ? attempts[cellId(reviewCell.sid, reviewCell.aid)] ?? []
+    : [];
+  const reviewAttempt =
+    reviewAttemptList[reviewAttemptIdx] ??
+    reviewAttemptList[reviewAttemptList.length - 1];
   const reviewQuestions = reviewCell ? questions[reviewCell.aid] ?? [] : [];
+  const reviewMcq = reviewQuestions.filter((q) => q.kind !== "written");
+  const reviewWritten = reviewQuestions.filter((q) => q.kind === "written");
 
   async function saveReview() {
     if (!reviewCell) return;
@@ -802,41 +814,95 @@ function InstructorGradebook({
           )}
           {reviewAttempt && reviewQuestions.length > 0 && (
             <div className="space-y-3 rounded-lg border border-black/10 p-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
-                  Quiz attempt
+                  Attempt {reviewAttempt.attemptNo} of {reviewAttemptList.length}
                 </span>
                 <span className="text-xs text-ink-faint">
-                  {reviewAttempt.score}/{reviewAttempt.total}
                   {reviewAttempt.submittedAt
-                    ? ` · ${relativeTime(reviewAttempt.submittedAt)}`
+                    ? relativeTime(reviewAttempt.submittedAt)
                     : ""}
                 </span>
               </div>
-              {reviewQuestions.map((q, qi) => {
-                const chosen = reviewAttempt.answers[q.id];
-                const key = answerKeys[q.id];
-                const isCorrect = key !== undefined && chosen === key;
-                return (
-                  <div key={q.id} className="flex items-start gap-2 text-sm">
-                    {isCorrect ? (
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                    ) : (
-                      <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-ink">
-                        {qi + 1}. {q.prompt}
-                      </p>
-                      <p className="text-ink-muted">
-                        {chosen !== undefined
-                          ? q.options[chosen] ?? "—"
-                          : "(no answer)"}
-                      </p>
-                    </div>
+              {reviewAttemptList.length > 1 && (
+                <Select
+                  value={reviewAttemptIdx}
+                  onChange={(e) => setReviewAttemptIdx(Number(e.target.value))}
+                >
+                  {reviewAttemptList.map((at, i) => (
+                    <option key={at.id} value={i}>
+                      Attempt {at.attemptNo} · auto {at.score}/{at.total}
+                    </option>
+                  ))}
+                </Select>
+              )}
+              {reviewWritten.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                    Written answers — grade below
+                  </p>
+                  {reviewWritten.map((q) => {
+                    const answer = reviewAttempt.answers[q.id];
+                    const text =
+                      typeof answer === "string" ? answer : "";
+                    return (
+                      <div
+                        key={q.id}
+                        className="rounded-lg border border-black/10 bg-surface-subtle p-3 text-sm"
+                      >
+                        <p className="font-medium text-ink">
+                          {q.prompt}
+                          <span className="ml-1 font-normal text-ink-faint">
+                            ({q.points} pts)
+                          </span>
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-ink-muted">
+                          {text.trim() ? text : "(no answer)"}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {reviewMcq.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                      Multiple choice
+                    </span>
+                    <span className="text-xs text-ink-faint">
+                      Auto-marked: {reviewAttempt.score}/{reviewAttempt.total}
+                    </span>
                   </div>
-                );
-              })}
+                  {reviewMcq.map((q, qi) => {
+                    const chosen = reviewAttempt.answers[q.id];
+                    const key = answerKeys[q.id];
+                    const isCorrect =
+                      key !== undefined && chosen === key;
+                    const idx =
+                      typeof chosen === "number" ? chosen : undefined;
+                    return (
+                      <div key={q.id} className="flex items-start gap-2 text-sm">
+                        {isCorrect ? (
+                          <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                        ) : (
+                          <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-ink">
+                            {qi + 1}. {q.prompt}
+                          </p>
+                          <p className="text-ink-muted">
+                            {idx !== undefined
+                              ? q.options[idx] ?? "—"
+                              : "(no answer)"}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
           {reviewCriteria.length > 0 && reviewCell && (

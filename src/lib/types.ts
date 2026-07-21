@@ -88,6 +88,8 @@ export interface Assignment {
   description: string;
   /** Weighted grading bucket (assignment_groups, migration 0029). */
   groupId?: string;
+  /** Allowed quiz attempts (1-10, migration 0035). Quizzes only. */
+  attemptsAllowed?: number;
 }
 
 export interface Announcement {

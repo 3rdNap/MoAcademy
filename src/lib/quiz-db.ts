@@ -6,6 +6,9 @@
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
+// An answer map value is a chosen option index (MCQ) or free text (written).
+export type QuizAnswer = number | string;
+
 export interface QuizQuestion {
   id: string;
   assignmentId: string;
@@ -13,6 +16,7 @@ export interface QuizQuestion {
   prompt: string;
   options: string[];
   points: number;
+  kind: "mcq" | "written";
 }
 
 export interface QuizAttempt {
@@ -22,7 +26,8 @@ export interface QuizAttempt {
   submittedAt: string;
   score: number;
   total: number;
-  answers: Record<string, number>;
+  answers: Record<string, QuizAnswer>;
+  attemptNo: number;
 }
 
 interface QuizQuestionRow {
@@ -32,6 +37,7 @@ interface QuizQuestionRow {
   prompt: string;
   options: string[];
   points: number;
+  kind: "mcq" | "written";
 }
 
 interface QuizAttemptRow {
@@ -41,7 +47,8 @@ interface QuizAttemptRow {
   submitted_at: string;
   score: number;
   total: number;
-  answers: Record<string, number> | null;
+  answers: Record<string, QuizAnswer> | null;
+  attempt_no: number;
 }
 
 function mapQuestion(r: QuizQuestionRow): QuizQuestion {
@@ -52,6 +59,7 @@ function mapQuestion(r: QuizQuestionRow): QuizQuestion {
     prompt: r.prompt,
     options: r.options ?? [],
     points: r.points,
+    kind: r.kind ?? "mcq",
   };
 }
 
@@ -64,6 +72,7 @@ function mapAttempt(r: QuizAttemptRow): QuizAttempt {
     score: r.score,
     total: r.total,
     answers: r.answers ?? {},
+    attemptNo: r.attempt_no ?? 1,
   };
 }
 
@@ -164,9 +173,10 @@ export async function fetchMyQuizSources(
   }
 }
 
-/** Add a question then its answer key, as the assignment's teaching account.
- * If the key write fails the question is rolled back so no keyless question is
- * left behind. Null when refused. */
+/** Add a question, then (for MCQ) its answer key, as the assignment's teaching
+ * account. Written questions carry no options and no key — they're free-text
+ * answers a teacher grades. If an MCQ key write fails the question is rolled
+ * back so no keyless MCQ is left behind. Null when refused. */
 export async function addQuizQuestion(
   assignmentId: string,
   input: {
@@ -175,6 +185,7 @@ export async function addQuizQuestion(
     correctIndex: number;
     points: number;
     position: number;
+    kind: "mcq" | "written";
   },
 ): Promise<QuizQuestion | null> {
   const supabase = createSupabaseBrowserClient();
@@ -184,24 +195,27 @@ export async function addQuizQuestion(
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return null;
+    const written = input.kind === "written";
     const { data, error } = await supabase
       .from("quiz_questions")
       .insert({
         assignment_id: assignmentId,
         prompt: input.prompt,
-        options: input.options,
+        options: written ? [] : input.options,
         points: input.points,
         position: input.position,
+        kind: input.kind,
       })
       .select()
       .single();
     if (error || !data) return null;
     const question = mapQuestion(data as unknown as QuizQuestionRow);
+    if (written) return question; // no answer key for free-text questions
     const { error: keyError } = await supabase
       .from("quiz_answer_keys")
       .insert({ question_id: question.id, correct_index: input.correctIndex });
     if (keyError) {
-      // Don't leave a keyless (ungradable) question behind.
+      // Don't leave a keyless (ungradable) MCQ behind.
       await supabase.from("quiz_questions").delete().eq("id", question.id);
       return null;
     }
@@ -274,7 +288,8 @@ export async function removeQuizQuestion(id: string): Promise<boolean> {
   }
 }
 
-/** The signed-in student's own attempts for these assignments (phase 2). */
+/** The signed-in student's own attempts for these assignments — every attempt
+ * now (multiple allowed, migration 0035), ordered by attempt number. */
 export async function fetchMyAttempts(
   assignmentIds: string[],
 ): Promise<QuizAttempt[] | null> {
@@ -290,7 +305,8 @@ export async function fetchMyAttempts(
       .from("quiz_attempts")
       .select("*")
       .eq("student_id", user.id)
-      .in("assignment_id", assignmentIds);
+      .in("assignment_id", assignmentIds)
+      .order("attempt_no", { ascending: true });
     if (error || !data) return null;
     return (data as unknown as QuizAttemptRow[]).map(mapAttempt);
   } catch {
@@ -317,18 +333,26 @@ export async function fetchAttemptsForAssignments(
   }
 }
 
-/** Submit and auto-grade a quiz attempt via the server RPC (phase 2). The key
- * never leaves the database. Null on any error (e.g. already attempted). */
+export interface QuizAttemptResult {
+  earned: number; // auto-graded MCQ points earned this attempt
+  total: number; // auto-gradable MCQ points
+  writtenTotal: number; // points awaiting teacher grading
+  pendingWritten: boolean; // written questions exist → teacher finishes grading
+  score: number | null; // final scaled score; null while written is pending
+  points: number; // assignment points
+  correct: string[]; // ids of MCQ answered correctly this attempt
+  attemptNo: number; // this attempt's number
+  attemptsAllowed: number;
+}
+
+/** Submit and auto-grade a quiz attempt via the server RPC. MCQ keys never
+ * leave the database; written answers are stored for the teacher. The answer
+ * map holds option indexes (MCQ) or free text (written), keyed by question id.
+ * Null on any error (e.g. no attempts left). */
 export async function submitQuizAttempt(
   assignmentId: string,
-  answers: Record<string, number>,
-): Promise<{
-  earned: number;
-  total: number;
-  score: number;
-  points: number;
-  correct: string[];
-} | null> {
+  answers: Record<string, QuizAnswer>,
+): Promise<QuizAttemptResult | null> {
   const supabase = createSupabaseBrowserClient();
   if (!supabase) return null;
   try {
@@ -337,13 +361,7 @@ export async function submitQuizAttempt(
       answer_map: answers,
     });
     if (error || !data) return null;
-    return data as {
-      earned: number;
-      total: number;
-      score: number;
-      points: number;
-      correct: string[];
-    };
+    return data as QuizAttemptResult;
   } catch {
     return null;
   }

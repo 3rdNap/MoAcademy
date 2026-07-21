@@ -124,6 +124,7 @@ interface AssignmentRow {
   available_at: string | null;
   points: number;
   group_id: string | null;
+  quiz_attempts_allowed: number | null;
 }
 
 function mapAssignmentRow(r: AssignmentRow): Assignment {
@@ -137,6 +138,7 @@ function mapAssignmentRow(r: AssignmentRow): Assignment {
     availableAt: r.available_at ?? undefined,
     points: r.points,
     groupId: r.group_id ?? undefined,
+    attemptsAllowed: r.quiz_attempts_allowed ?? undefined,
     status: "not_started",
   };
 }
@@ -226,6 +228,25 @@ export async function removeRemoteAssignment(id: string): Promise<boolean> {
   if (!supabase) return false;
   try {
     const { error } = await supabase.from("assignments").delete().eq("id", id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/** Set how many attempts a quiz allows (1-10, migration 0035). Teaching RLS
+ * enforces write access. False when refused/offline. */
+export async function setQuizAttemptsAllowed(
+  assignmentId: string,
+  n: number,
+): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from("assignments")
+      .update({ quiz_attempts_allowed: Math.max(1, Math.min(10, n)) })
+      .eq("id", assignmentId);
     return !error;
   } catch {
     return false;
