@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   BookOpen,
+  Bot,
   CheckCircle2,
   ClipboardList,
   CreditCard,
@@ -69,6 +70,12 @@ const OPERATIONS = [
     label: "Messages",
     desc: "Institution-wide messaging",
     icon: MessageSquare,
+  },
+  {
+    href: "/admin#automations",
+    label: "Automations",
+    desc: "Scheduled agents, run log",
+    icon: Bot,
   },
 ] as const;
 

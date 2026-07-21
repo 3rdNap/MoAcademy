@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen,
+  Bot,
   ChevronRight,
   ClipboardList,
   Download,
@@ -17,6 +18,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { AddPersonButton } from "@/components/admin/AddPersonButton";
+import { AutomationToggle } from "@/components/admin/AutomationToggle";
 import { ImportPeopleButton } from "@/components/admin/ImportPeopleButton";
 import { ManageSubjectsButton } from "@/components/admin/ManageSubjectsButton";
 import { ResetPasswordButton } from "@/components/admin/ResetPasswordButton";
@@ -26,8 +28,13 @@ import { isAdmin, roleLabel } from "@/lib/role";
 import { roster } from "@/lib/roster";
 import { formatMoney } from "@/lib/billing/pricing";
 import { subjects } from "@/lib/billing/subjects";
-import { formatDate, initialsOf } from "@/lib/utils";
-import type { AdminEnrollment, AdminOverview } from "@/lib/data";
+import { formatDate, initialsOf, relativeTime } from "@/lib/utils";
+import type {
+  AdminEnrollment,
+  AdminOverview,
+  AutomationAgent,
+  AutomationLogEntry,
+} from "@/lib/data";
 import type { Assignment, Course } from "@/lib/types";
 
 export function AdminConsole({
@@ -37,6 +44,8 @@ export function AdminConsole({
   enrollments,
   currentUserId,
   currentTerm,
+  agents = [],
+  automationLog = [],
 }: {
   courses: Course[];
   assignments: Assignment[];
@@ -47,6 +56,10 @@ export function AdminConsole({
   currentUserId?: string;
   /** The institution's active term (app_settings, migration 0029). */
   currentTerm: string;
+  /** Scheduled intelligent agents (migration 0039); empty when unavailable. */
+  agents?: AutomationAgent[];
+  /** Recent automation activity (migration 0039); empty when unavailable. */
+  automationLog?: AutomationLogEntry[];
 }) {
   const { role, hydrated } = useRole();
   const router = useRouter();
@@ -427,6 +440,88 @@ export function AdminConsole({
               disabled={overview.registrations.length === 0}
             />
           </div>
+        </section>
+      )}
+
+      {/* Automations — scheduled intelligent agents (migration 0039) */}
+      {agents.length > 0 && (
+        <section id="automations" className="mt-8 scroll-mt-24">
+          <div className="mb-1 flex items-center gap-2">
+            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-faint">
+              <Bot className="h-4 w-4" /> Automations
+              <Badge tone="neutral">{agents.length}</Badge>
+            </h2>
+          </div>
+          <p className="mb-3 text-xs text-ink-muted">
+            Scheduled agents run nightly and message students in-app. Toggle them
+            here.
+          </p>
+
+          <div className="card divide-y divide-black/5">
+            {agents.map((a) => (
+              <div key={a.key} className="flex items-start gap-3 p-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-500/15">
+                  <Bot className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-ink">{a.name}</p>
+                  <p className="text-xs text-ink-muted">{a.description}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge tone={a.enabled ? "success" : "neutral"}>
+                    {a.enabled ? "On" : "Off"}
+                  </Badge>
+                  <AutomationToggle
+                    agentKey={a.key}
+                    enabled={a.enabled}
+                    label={a.name}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Recent activity
+          </h3>
+          {automationLog.length === 0 ? (
+            <div className="card p-6 text-sm text-ink-muted">
+              No automated messages sent yet. Agents act when assignments have
+              upcoming or missed deadlines.
+            </div>
+          ) : (
+            <div className="card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-black/5 bg-surface-subtle text-left text-xs uppercase tracking-wide text-ink-faint">
+                    <th className="px-4 py-3 font-semibold">Agent</th>
+                    <th className="px-4 py-3 font-semibold">Student</th>
+                    <th className="px-4 py-3 font-semibold">Assignment</th>
+                    <th className="px-4 py-3 font-semibold">When</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/5">
+                  {automationLog.map((entry) => (
+                    <tr key={entry.id} className="hover:bg-surface-subtle">
+                      <td className="px-4 py-3 text-ink">
+                        {agents.find((a) => a.key === entry.agentKey)?.name ??
+                          entry.agentKey}
+                      </td>
+                      <td className="px-4 py-3 text-ink-muted">
+                        {entry.studentName || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-ink-muted">
+                        {entry.detail || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-ink-faint">
+                        {relativeTime(entry.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       )}
     </>

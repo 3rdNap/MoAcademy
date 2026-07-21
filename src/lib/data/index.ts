@@ -297,6 +297,101 @@ export const getAdminEnrollments = cache(
   },
 );
 
+export interface AutomationAgent {
+  key: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+}
+
+export interface AutomationLogEntry {
+  id: string;
+  agentKey: string;
+  detail: string;
+  studentName: string;
+  createdAt: string;
+}
+
+/**
+ * The scheduled intelligent agents (migration 0039) an admin can see and
+ * toggle. Admin-gated like {@link getAdminEnrollments}; null for anyone else /
+ * on error so the console hides the section.
+ */
+export const getAutomationAgents = cache(
+  async (): Promise<AutomationAgent[] | null> => {
+    const { authed, role } = await getAuthState();
+    if (!authed || role !== "admin") return null;
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) return null;
+    try {
+      const { data, error } = await supabase
+        .from("automation_agents")
+        .select("key, name, description, enabled")
+        .order("name");
+      if (error) return null;
+      return ((data ?? []) as {
+        key: string;
+        name: string | null;
+        description: string | null;
+        enabled: boolean | null;
+      }[]).map((a) => ({
+        key: a.key,
+        name: a.name ?? a.key,
+        description: a.description ?? "",
+        enabled: Boolean(a.enabled),
+      }));
+    } catch {
+      return null;
+    }
+  },
+);
+
+/**
+ * Recent automation activity (migration 0039) — the nightly agents' in-app
+ * messages, newest first, joined to profiles for the student name. Admin-gated;
+ * null for anyone else / on error.
+ */
+export const getAutomationLog = cache(
+  async (limit = 30): Promise<AutomationLogEntry[] | null> => {
+    const { authed, role } = await getAuthState();
+    if (!authed || role !== "admin") return null;
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) return null;
+    try {
+      const { data, error } = await supabase
+        .from("automation_log")
+        .select("id, agent_key, detail, created_at, profiles:student_id(full_name)")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) return null;
+      // The student_id embed is to-one, but supabase-js types it as an array;
+      // normalise both shapes to a single name.
+      type LogRow = {
+        id: string;
+        agent_key: string;
+        detail: string | null;
+        created_at: string;
+        profiles:
+          | { full_name: string | null }
+          | { full_name: string | null }[]
+          | null;
+      };
+      return ((data ?? []) as LogRow[]).map((r) => {
+        const prof = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
+        return {
+          id: r.id,
+          agentKey: r.agent_key,
+          detail: r.detail ?? "",
+          studentName: prof?.full_name ?? "",
+          createdAt: r.created_at,
+        };
+      });
+    } catch {
+      return null;
+    }
+  },
+);
+
 export interface GuardianChild {
   id: string;
   name: string;
