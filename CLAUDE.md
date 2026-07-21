@@ -114,17 +114,42 @@ The app runs as an institution, not a self-service signup:
   `private.teaches_course`; students/guardians read their own) and weekly
   `course_meetings` slots surfaced on the course home and expanded into
   calendar occurrences client-side.
-- **Rubrics + structured quizzes** (0031/0032): point-valued rubric criteria
-  with per-student awards; MCQ quizzes whose answer keys live in a
-  teacher-only table and whose grading happens in the
-  `submit_quiz_attempt` SECURITY DEFINER RPC (one attempt per student,
-  score scaled to assignment points, lands as a graded submission via a
-  transaction-local guard escape). The submissions field guard covers
-  INSERT as well as UPDATE.
-- All migrations through **0032** are applied to the live Supabase project
-  (incl. the private `submissions` storage bucket — signed-URL reads for the
-  owner or the assignment's teaching accounts). Admin console can reset a
-  forgotten password (`/api/admin/reset-password`, service-role); the new
-  temp password re-flags `must_change_password`.
+- **Rubrics + structured quizzes** (0031/0032/0035): point-valued rubric
+  criteria with per-student awards; quizzes support MCQ (answer keys in a
+  teacher-only table) **and** written-response questions, with an
+  attempts-allowed limit (best auto-score counts). Grading runs in the
+  `submit_quiz_attempt` SECURITY DEFINER RPC (scaled to assignment points,
+  lands as a graded submission via a transaction-local guard escape; when
+  written questions exist it lands as `submitted` for teacher grading). The
+  submissions field guard covers INSERT as well as UPDATE.
+- **Module item content** (0034): items hold a page body, an uploaded file
+  (public `course-files` bucket, teaching-role writes), or a link/video, and
+  every item is click-through.
+- **Clickable course tools** — each course has tabs for Home, Syllabus,
+  Modules, Assignments, Discussions, Grades, People, Attendance, Groups
+  (0036), Awards (0037), Surveys (0038), Insights, and Office hours (0033,
+  book/cancel via row-locked RPCs). Groups/Awards/Surveys follow the same
+  board pattern: a `src/lib/*-db.ts` module + a `[courseId]/<tab>` route +
+  a `Course*Board` with a `useRole`/`canTeach` split, real-mode gated on
+  `fetchCourseRoster` non-null.
+- **Surveys anonymity** (0038): the `submit_survey` RPC writes answers with
+  `respondent_id` NULL for anonymous surveys (no answer↔student link exists
+  even for the teacher); `survey_completions` tracks who responded for
+  dedupe/progress without that link.
+- **Admin console** (D2L operations model): People (roles, passwords,
+  add/import), **bulk CSV import** (`/api/admin/bulk-import`, shared
+  provisioning helpers in `src/lib/admin/provision.ts`), Enrollments by
+  subject, Reports & processes (CSV exports), Term control. The admin
+  dashboard shows active-user/course/alert/message tiles + an operations
+  grid (`getAdminDashboard`, `getAdminEnrollments`).
+- All migrations through **0038** are applied to the live Supabase project
+  (private `submissions` bucket + public `course-files` bucket). Admin
+  console can reset a forgotten password (`/api/admin/reset-password`,
+  service-role); the new temp password re-flags `must_change_password`.
+- **Known-intentional security advisors:** the `submit_quiz_attempt`,
+  `submit_survey`, `book_office_hour`, `cancel_office_hour` RPCs are
+  signed-in-callable SECURITY DEFINER by design (each authenticates the
+  caller and scopes its writes). Leaked-password protection is a Supabase
+  dashboard toggle (Auth), not code.
   (`lzrwzjawwsjhmesavgzr`). Code still degrades gracefully (caught errors →
   fallback). Service-role key required for the admin routes.
