@@ -7,12 +7,15 @@ import { cn } from "@/lib/utils";
 
 // Extra tabs injected after a given base segment (rather than added to the
 // shared nav list) to keep these additions scoped to the course tab bar:
-// Syllabus follows Home, Attendance follows Grades, and Insights follows
-// People (its early-warning read on the roster), mirroring Canvas.
+// Syllabus follows Home, Attendance follows Grades, and Groups then Insights
+// follow People (roster-scoped tools), mirroring Canvas/D2L.
 const injectAfter: Record<string, CourseNavItem[]> = {
   "": [{ label: "Syllabus", segment: "syllabus" }],
   grades: [{ label: "Attendance", segment: "attendance" }],
-  people: [{ label: "Insights", segment: "insights" }],
+  people: [
+    { label: "Groups", segment: "groups" },
+    { label: "Insights", segment: "insights" },
+  ],
 };
 const navItems: CourseNavItem[] = courseNav.flatMap((item) => [
   item,
