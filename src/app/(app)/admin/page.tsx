@@ -3,6 +3,8 @@ import {
   getAdminEnrollments,
   getAdminOverview,
   getAssignments,
+  getAutomationAgents,
+  getAutomationLog,
   getCourses,
   getCurrentTerm,
   getCurrentUser,
@@ -11,15 +13,25 @@ import {
 export const metadata = { title: "Admin" };
 
 export default async function AdminPage() {
-  const [courses, assignments, overview, enrollments, user, currentTerm] =
-    await Promise.all([
-      getCourses(),
-      getAssignments(),
-      getAdminOverview(),
-      getAdminEnrollments(),
-      getCurrentUser(),
-      getCurrentTerm(),
-    ]);
+  const [
+    courses,
+    assignments,
+    overview,
+    enrollments,
+    user,
+    currentTerm,
+    agents,
+    automationLog,
+  ] = await Promise.all([
+    getCourses(),
+    getAssignments(),
+    getAdminOverview(),
+    getAdminEnrollments(),
+    getCurrentUser(),
+    getCurrentTerm(),
+    getAutomationAgents(),
+    getAutomationLog(),
+  ]);
   return (
     <AdminConsole
       courses={courses}
@@ -28,6 +40,8 @@ export default async function AdminPage() {
       enrollments={enrollments}
       currentUserId={user.id}
       currentTerm={currentTerm}
+      agents={agents ?? []}
+      automationLog={automationLog ?? []}
     />
   );
 }
