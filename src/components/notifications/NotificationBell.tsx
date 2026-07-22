@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Award,
   Bell,
   CalendarClock,
   ClipboardList,
@@ -14,6 +15,8 @@ import {
 import { useLocalCollection } from "@/lib/local-store";
 import { fetchRecentRemoteAnnouncements } from "@/lib/course-content-db";
 import { fetchMyMessages, type RemoteMessage } from "@/lib/inbox-db";
+import { fetchMyAwards, type Badge, type BadgeAward } from "@/lib/awards-db";
+import { fetchMyOpenSurveys, type Survey } from "@/lib/surveys-db";
 import {
   fetchRemoteApplications,
   fetchRemoteScholarships,
@@ -97,6 +100,34 @@ export function NotificationBell({
       if (!alive || !id || !msgs) return;
       setUnreadMessages(msgs.filter((m) => m.recipientId === id && !m.readAt));
     });
+    return () => {
+      alive = false;
+    };
+  }, [authed]);
+
+  // Badges the signed-in student has earned (recent ones only, below).
+  const [earnedBadges, setEarnedBadges] = useState<
+    (BadgeAward & { badge: Badge })[]
+  >([]);
+  useEffect(() => {
+    if (!authed) return;
+    let alive = true;
+    fetchMyAwards().then((awards) => {
+      if (!alive || !awards) return;
+      const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      setEarnedBadges(awards.filter((a) => +new Date(a.awardedAt) >= cutoff));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [authed]);
+
+  // Surveys in the student's courses still awaiting their response.
+  const [openSurveys, setOpenSurveys] = useState<Survey[]>([]);
+  useEffect(() => {
+    if (!authed) return;
+    let alive = true;
+    fetchMyOpenSurveys().then((s) => alive && s && setOpenSurveys(s));
     return () => {
       alive = false;
     };
@@ -245,8 +276,40 @@ export function NotificationBell({
       }
     }
 
+    // Badges earned recently (signed-in only), newest 5.
+    if (authed) {
+      for (const a of earnedBadges.slice(0, 5)) {
+        const course = seed.courses.find((c) => c.id === a.badge.courseKey);
+        list.push({
+          id: `badge-${a.id}`,
+          icon: Award,
+          tone: "bg-emerald-50 text-emerald-600",
+          title: `Badge earned: ${a.badge.name}`,
+          detail: a.note || (course ? `Awarded in ${course.code}` : "Achievement unlocked"),
+          href: "/report",
+          at: a.awardedAt,
+        });
+      }
+    }
+
+    // Surveys still awaiting the student's response (signed-in only), first 5.
+    if (authed) {
+      const now = new Date().toISOString();
+      for (const s of openSurveys.slice(0, 5)) {
+        list.push({
+          id: `survey-${s.id}`,
+          icon: ClipboardList,
+          tone: "bg-brand-50 text-brand-600",
+          title: `Survey: ${s.title}`,
+          detail: `Awaiting your response${s.closesAt ? ` · closes ${relativeTime(s.closesAt)}` : ""}`,
+          href: `/courses/${s.courseKey}/surveys`,
+          at: s.closesAt ?? now,
+        });
+      }
+    }
+
     return list.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-  }, [read.items, apps.items, scholarships.items, remoteApps, remoteScholarships, published, unreadMessages, authed, upcoming, recentGrades]);
+  }, [read.items, apps.items, scholarships.items, remoteApps, remoteScholarships, published, unreadMessages, earnedBadges, openSurveys, authed, upcoming, recentGrades]);
 
   const count = mounted ? notes.length : 0;
 
