@@ -90,6 +90,36 @@ export async function fetchCourseSurveys(
   }
 }
 
+/** Open surveys awaiting the signed-in student: RLS already limits `surveys` to
+ * the student's courses, so drop the ones they've completed and any past their
+ * close date. Null on error / signed out. */
+export async function fetchMyOpenSurveys(): Promise<Survey[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("surveys")
+      .select("id, course_key, title, description, anonymous, closes_at")
+      .order("created_at", { ascending: false });
+    if (error || !data) return null;
+    const surveys = (data as unknown as SurveyRow[]).map(mapSurvey);
+    const completed = await fetchMyCompletions(surveys.map((s) => s.id));
+    if (completed === null) return null;
+    const now = Date.now();
+    return surveys.filter(
+      (s) =>
+        !completed.includes(s.id) &&
+        (!s.closesAt || +new Date(s.closesAt) >= now),
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** A survey's questions, ordered by position. Null on any failure. */
 export async function fetchSurveyQuestions(
   surveyId: string,
