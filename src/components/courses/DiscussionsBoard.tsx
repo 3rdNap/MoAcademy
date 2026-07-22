@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import {
   ChevronLeft,
   MessageSquare,
@@ -46,9 +46,21 @@ interface Reply {
   author: string;
   body: string;
   createdAt: string;
+  parentId?: string | null; // NULL/undefined = top-level reply; lets the demo thread too
 }
 
 type Source = "local" | "remote" | "seed";
+
+// A reply flattened across remote + local sources, carrying its parent link
+// so the detail view can rebuild the nested thread.
+interface FlatReply {
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  parentId: string | null;
+  remote: boolean;
+}
 
 interface Thread {
   id: string;
@@ -94,6 +106,9 @@ export function DiscussionsBoard({
   const [newTopicOpen, setNewTopicOpen] = useState(false);
   const [draft, setDraft] = useState({ title: "", prompt: "" });
   const [composer, setComposer] = useState("");
+  // Inline reply-to-reply: only one open at a time (the target reply's id).
+  const [activeReplyTo, setActiveReplyTo] = useState<string | null>(null);
+  const [replyBody, setReplyBody] = useState("");
 
   const threads: Thread[] = useMemo(
     () => [
@@ -163,15 +178,22 @@ export function DiscussionsBoard({
     setNewTopicOpen(false);
   }
 
-  async function postReply(threadId: string) {
-    if (!composer.trim()) return;
-    const body = composer.trim();
+  // Post a reply to a topic (parentId undefined) or nested under another
+  // reply (parentId set). Returns whether anything was posted.
+  async function postReply(
+    threadId: string,
+    body: string,
+    parentId?: string,
+  ): Promise<boolean> {
+    const text = body.trim();
+    if (!text) return false;
 
     // Replies to shared topics go to the class when signed in.
     if (remoteTopicFor(threadId) && signedIn) {
       const created = await addRemoteReply(threadId, {
-        body,
+        body: text,
         authorName: userName,
+        parentId,
       });
       if (created) {
         setRemote((prev) =>
@@ -179,8 +201,7 @@ export function DiscussionsBoard({
             t.id === threadId ? { ...t, replies: [...t.replies, created] } : t,
           ),
         );
-        setComposer("");
-        return;
+        return true;
       }
     }
 
@@ -188,26 +209,62 @@ export function DiscussionsBoard({
       id: newId(),
       threadId,
       author: userName,
-      body,
+      body: text,
       createdAt: new Date().toISOString(),
+      parentId: parentId ?? null,
     });
-    setComposer("");
+    return true;
+  }
+
+  async function submitTopLevelReply(threadId: string) {
+    if (await postReply(threadId, composer)) setComposer("");
+  }
+
+  async function submitInlineReply(threadId: string, parentId: string) {
+    if (await postReply(threadId, replyBody, parentId)) {
+      setReplyBody("");
+      setActiveReplyTo(null);
+    }
+  }
+
+  // Ids of a reply plus all its descendants, from a flat parentId list.
+  function descendantIds<T extends { id: string; parentId?: string | null }>(
+    rootId: string,
+    rows: T[],
+  ): string[] {
+    const collected = [rootId];
+    for (let i = 0; i < collected.length; i++) {
+      for (const r of rows) {
+        if (r.parentId === collected[i] && !collected.includes(r.id)) {
+          collected.push(r.id);
+        }
+      }
+    }
+    return collected;
   }
 
   async function deleteReply(threadId: string, replyId: string, isRemote: boolean) {
     if (isRemote) {
+      // Server cascade-deletes children; mirror that in local state so the
+      // rendered sub-thread disappears without a refetch.
+      const topic = remoteTopicFor(threadId);
+      const doomed = new Set(
+        topic ? descendantIds(replyId, topic.replies) : [replyId],
+      );
       if (await removeRemoteReply(replyId)) {
         setRemote((prev) =>
           (prev ?? []).map((t) =>
             t.id === threadId
-              ? { ...t, replies: t.replies.filter((r) => r.id !== replyId) }
+              ? { ...t, replies: t.replies.filter((r) => !doomed.has(r.id)) }
               : t,
           ),
         );
       }
       return;
     }
-    replies.remove(replyId);
+    // Local demo: drop the reply and its descendants to match a cascade.
+    const threadReplies = replies.items.filter((r) => r.threadId === threadId);
+    for (const id of descendantIds(replyId, threadReplies)) replies.remove(id);
   }
 
   // ----- Thread detail view -----
@@ -216,8 +273,15 @@ export function DiscussionsBoard({
     const localTopic = topics.items.find((t) => t.id === selected);
     const remoteTopic = remoteTopicFor(selected);
     const prompt = localTopic?.prompt ?? remoteTopic?.prompt;
-    const threadReplies = [
-      ...(remoteTopic?.replies ?? []).map((r) => ({ ...r, remote: true })),
+    const threadReplies: FlatReply[] = [
+      ...(remoteTopic?.replies ?? []).map((r) => ({
+        id: r.id,
+        author: r.author,
+        body: r.body,
+        createdAt: r.createdAt,
+        parentId: r.parentId ?? null,
+        remote: true,
+      })),
       ...replies.items
         .filter((r) => r.threadId === selected)
         .map((r) => ({
@@ -225,6 +289,7 @@ export function DiscussionsBoard({
           author: r.author,
           body: r.body,
           createdAt: r.createdAt,
+          parentId: r.parentId ?? null,
           remote: false,
         })),
     ].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
@@ -234,12 +299,108 @@ export function DiscussionsBoard({
       return null;
     }
 
+    // Build a tree from the flat rows. Rows whose parent isn't present in this
+    // thread (e.g. an orphan) fall back to top-level so nothing is dropped.
+    const replyIds = new Set(threadReplies.map((r) => r.id));
+    const childrenOf = (parentId: string | null) =>
+      threadReplies.filter((r) => {
+        const key = r.parentId && replyIds.has(r.parentId) ? r.parentId : null;
+        return key === parentId;
+      });
+
+    // Cap indentation depth so deep chains stay readable on mobile; deeper
+    // replies still render, just without extra left margin.
+    const MAX_INDENT_DEPTH = 3;
+    const renderReplies = (parentId: string | null, depth: number): ReactElement[] =>
+      childrenOf(parentId).flatMap((r) => {
+        const mine = r.author === userName;
+        const indent = Math.min(depth, MAX_INDENT_DEPTH);
+        return [
+          <li
+            key={r.id}
+            className="space-y-3"
+            style={indent ? { marginLeft: `${indent * 1.25}rem` } : undefined}
+          >
+            <div className="card flex gap-3 p-4">
+              <Avatar
+                initials={initialsOf(r.author)}
+                color={mine ? "#10b6a3" : "#8b94a3"}
+                size={32}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm">
+                  <span className="font-medium text-ink">{r.author}</span>
+                  {mine && (
+                    <Badge tone="success" className="ml-2">
+                      You
+                    </Badge>
+                  )}
+                  <span className="ml-2 text-xs text-ink-faint">
+                    {relativeTime(r.createdAt)}
+                  </span>
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-ink-muted">
+                  {r.body}
+                </p>
+                <button
+                  onClick={() => {
+                    setActiveReplyTo((cur) => (cur === r.id ? null : r.id));
+                    setReplyBody("");
+                  }}
+                  className="focus-ring mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline"
+                >
+                  <MessageSquare className="h-3 w-3" /> Reply
+                </button>
+              </div>
+              {mine && (
+                <button
+                  onClick={() => deleteReply(selected, r.id, r.remote)}
+                  className="focus-ring h-fit rounded p-1 text-ink-faint hover:text-rose-600"
+                  aria-label="Delete reply"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            {activeReplyTo === r.id && (
+              <div className="card p-3">
+                <Textarea
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  placeholder={`Reply to ${r.author}…`}
+                />
+                <div className="mt-2 flex justify-end gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setActiveReplyTo(null);
+                      setReplyBody("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => submitInlineReply(selected, r.id)}
+                    disabled={!replyBody.trim()}
+                  >
+                    <Send className="h-4 w-4" /> Reply
+                  </Button>
+                </div>
+              </div>
+            )}
+          </li>,
+          ...renderReplies(r.id, depth + 1),
+        ];
+      });
+
     return (
       <>
         <button
           onClick={() => {
             setSelected(null);
             setComposer("");
+            setActiveReplyTo(null);
+            setReplyBody("");
           }}
           className="focus-ring mb-4 inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:underline"
         >
@@ -269,43 +430,7 @@ export function DiscussionsBoard({
         </h2>
 
         <ul className="space-y-3">
-          {threadReplies.map((r) => {
-            const mine = r.author === userName;
-            return (
-              <li key={r.id} className="card flex gap-3 p-4">
-                <Avatar
-                  initials={initialsOf(r.author)}
-                  color={mine ? "#10b6a3" : "#8b94a3"}
-                  size={32}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm">
-                    <span className="font-medium text-ink">{r.author}</span>
-                    {mine && (
-                      <Badge tone="success" className="ml-2">
-                        You
-                      </Badge>
-                    )}
-                    <span className="ml-2 text-xs text-ink-faint">
-                      {relativeTime(r.createdAt)}
-                    </span>
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-ink-muted">
-                    {r.body}
-                  </p>
-                </div>
-                {mine && (
-                  <button
-                    onClick={() => deleteReply(selected, r.id, r.remote)}
-                    className="focus-ring h-fit rounded p-1 text-ink-faint hover:text-rose-600"
-                    aria-label="Delete reply"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </li>
-            );
-          })}
+          {renderReplies(null, 0)}
           {threadReplies.length === 0 && (
             <li className="card p-6 text-center text-sm text-ink-faint">
               No replies yet — be the first to respond.
@@ -322,7 +447,7 @@ export function DiscussionsBoard({
           />
           <div className="mt-2 flex justify-end">
             <Button
-              onClick={() => postReply(selected)}
+              onClick={() => submitTopLevelReply(selected)}
               disabled={!composer.trim()}
             >
               <Send className="h-4 w-4" /> Post reply
