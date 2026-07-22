@@ -3,6 +3,7 @@ import {
   getAdminEnrollments,
   getAdminOverview,
   getAssignments,
+  getAuthState,
   getAutomationAgents,
   getAutomationLog,
   getCourses,
@@ -19,6 +20,7 @@ export default async function AdminPage() {
     overview,
     enrollments,
     user,
+    auth,
     currentTerm,
     agents,
     automationLog,
@@ -28,6 +30,7 @@ export default async function AdminPage() {
     getAdminOverview(),
     getAdminEnrollments(),
     getCurrentUser(),
+    getAuthState(),
     getCurrentTerm(),
     getAutomationAgents(),
     getAutomationLog(),
@@ -39,6 +42,7 @@ export default async function AdminPage() {
       overview={overview}
       enrollments={enrollments}
       currentUserId={user.id}
+      authedRole={auth.authed ? auth.role : null}
       currentTerm={currentTerm}
       agents={agents ?? []}
       automationLog={automationLog ?? []}

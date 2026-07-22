@@ -35,7 +35,7 @@ import type {
   AutomationAgent,
   AutomationLogEntry,
 } from "@/lib/data";
-import type { Assignment, Course } from "@/lib/types";
+import type { Assignment, Course, Role } from "@/lib/types";
 
 export function AdminConsole({
   courses,
@@ -43,6 +43,7 @@ export function AdminConsole({
   overview,
   enrollments,
   currentUserId,
+  authedRole = null,
   currentTerm,
   agents = [],
   automationLog = [],
@@ -54,6 +55,8 @@ export function AdminConsole({
   /** Current-term enrolment rows for a signed-in admin; null falls back to demo. */
   enrollments: AdminEnrollment[] | null;
   currentUserId?: string;
+  /** Authoritative role from the server session (null = anonymous demo). */
+  authedRole?: Role | null;
   /** The institution's active term (app_settings, migration 0029). */
   currentTerm: string;
   /** Scheduled intelligent agents (migration 0039); empty when unavailable. */
@@ -92,9 +95,15 @@ export function AdminConsole({
     return data?.error ?? "Couldn't update the role.";
   }
 
-  if (!hydrated) return null;
+  // A signed-in account's role is authoritative from the server session — the
+  // client preview only applies to the anonymous demo. This is why the gate
+  // never waits on client hydration for real accounts.
+  const isRealAccount = authedRole != null;
+  const effectiveAdmin = isRealAccount ? authedRole === "admin" : isAdmin(role);
 
-  if (!isAdmin(role)) {
+  if (!isRealAccount && !hydrated) return null;
+
+  if (!effectiveAdmin) {
     return (
       <div className="card flex flex-col items-center gap-3 p-12 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15">
@@ -103,8 +112,9 @@ export function AdminConsole({
         <div>
           <p className="font-semibold text-ink">Administrators only</p>
           <p className="mt-1 text-sm text-ink-muted">
-            Switch to <span className="font-medium">Admin</span> in the top-bar
-            role selector to view the console.
+            {isRealAccount
+              ? `This area is for administrators. You're signed in as ${roleLabel[authedRole]}.`
+              : "This is the administrator console. Preview the Admin role to explore it in the demo."}
           </p>
         </div>
       </div>
