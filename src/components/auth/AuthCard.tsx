@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Label, Select } from "@/components/ui/form";
@@ -9,7 +8,6 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /** Shared sign-in / sign-up form. mode controls which flow it runs. */
 export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
-  const router = useRouter();
   const isSignup = mode === "signup";
 
   const [name, setName] = useState("");
@@ -66,8 +64,12 @@ export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
         });
         if (error) throw error;
       }
-      router.push("/dashboard");
-      router.refresh();
+      // Hard navigation (not router.push/refresh): a full request guarantees
+      // the just-set auth cookie reaches the server on this load, so server
+      // components see the signed-in user and their real role immediately.
+      // A soft refresh can race the cookie write and render as signed-out.
+      window.location.assign("/dashboard");
+      return;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setBusy(false);
