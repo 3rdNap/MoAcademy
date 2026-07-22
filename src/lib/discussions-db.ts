@@ -11,6 +11,7 @@ export interface RemoteReply {
   authorId: string | null;
   body: string;
   createdAt: string;
+  parentId: string | null; // NULL = top-level reply to the topic (migration 0040)
 }
 
 export interface RemoteTopic {
@@ -26,6 +27,7 @@ export interface RemoteTopic {
 interface ReplyRow {
   id: string;
   topic_id: string;
+  parent_id: string | null;
   author_id: string | null;
   author_name: string;
   body: string;
@@ -50,6 +52,7 @@ function mapReply(r: ReplyRow): RemoteReply {
     authorId: r.author_id,
     body: r.body,
     createdAt: r.created_at,
+    parentId: r.parent_id,
   };
 }
 
@@ -119,7 +122,7 @@ export async function addRemoteTopic(
 /** Post a reply as the signed-in user. Null when signed out / refused. */
 export async function addRemoteReply(
   topicId: string,
-  input: { body: string; authorName: string },
+  input: { body: string; authorName: string; parentId?: string },
 ): Promise<RemoteReply | null> {
   const supabase = createSupabaseBrowserClient();
   if (!supabase) return null;
@@ -132,6 +135,7 @@ export async function addRemoteReply(
       .from("discussion_replies")
       .insert({
         topic_id: topicId,
+        parent_id: input.parentId ?? null,
         author_id: user.id,
         author_name: input.authorName,
         body: input.body,
