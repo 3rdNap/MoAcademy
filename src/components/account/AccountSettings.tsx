@@ -2,15 +2,38 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Check, User as UserIcon } from "lucide-react";
+import { Bell, Check, KeyRound, User as UserIcon } from "lucide-react";
 import { Widget } from "@/components/ui/Widget";
 import { Button } from "@/components/ui/Button";
-import { Label } from "@/components/ui/form";
+import { Label, Field, Input } from "@/components/ui/form";
+import { Avatar } from "@/components/ui/Avatar";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const PROFILE_KEY = "moacademy.account.profile";
 const NOTIF_KEY = "moacademy.account.notifications";
+
+// No shared avatar palette exists in src/lib or src/components/ui yet, so a
+// small preset lives here.
+const AVATAR_COLORS = [
+  "#0284c7", // sky (default)
+  "#7c3aed", // violet
+  "#db2777", // pink
+  "#dc2626", // red
+  "#ea580c", // orange
+  "#ca8a04", // amber
+  "#16a34a", // green
+  "#0d9488", // teal
+];
+
+// Mirrors the forced first-login flow in SetPasswordCard.
+const MIN_PASSWORD_LENGTH = 8;
+
+function initialsFor(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
 
 const timezones = [
   "GMT+2 · Johannesburg",
@@ -40,9 +63,11 @@ const defaultNotifs: Notifs = {
 export function AccountSettings({
   fullName,
   email,
+  avatarColor,
 }: {
   fullName: string;
   email: string;
+  avatarColor: string;
 }) {
   const [displayName, setDisplayName] = useState(fullName.split(" ")[0]);
   const [timezone, setTimezone] = useState(timezones[0]);
@@ -85,6 +110,63 @@ export function AccountSettings({
     setProfileState("saved");
     router.refresh(); // top bar + pages pick up the new name
     setTimeout(() => setProfileState("idle"), 1800);
+  }
+
+  const [selectedColor, setSelectedColor] = useState(avatarColor);
+  const [colorState, setColorState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  async function saveAvatarColor() {
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase || !userId) return;
+    setColorState("saving");
+    const { error } = await supabase
+      .from("profiles")
+      .update({ avatar_color: selectedColor })
+      .eq("id", userId);
+    if (error) {
+      setColorState("error");
+      return;
+    }
+    setColorState("saved");
+    router.refresh(); // top-bar avatar picks up the new color
+    setTimeout(() => setColorState("idle"), 1800);
+  }
+
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordState, setPasswordState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  const passwordTouched = newPassword.length > 0 || confirmPassword.length > 0;
+  const passwordValid =
+    newPassword.length >= MIN_PASSWORD_LENGTH && newPassword === confirmPassword;
+
+  async function savePassword() {
+    setPasswordError(null);
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      setPasswordError(`Use at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("The passwords don't match.");
+      return;
+    }
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      setPasswordError("Sign-in isn't available on this deployment.");
+      return;
+    }
+    setPasswordState("saving");
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      setPasswordError(error.message);
+      setPasswordState("error");
+      return;
+    }
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordState("saved");
+    setTimeout(() => setPasswordState("idle"), 1800);
   }
 
   useEffect(() => {
@@ -196,6 +278,53 @@ export function AccountSettings({
             </select>
           </div>
         </div>
+
+        {userId && (
+          <div className="mt-4 border-t border-black/10 pt-4 dark:border-white/10">
+            <Label>Avatar colour</Label>
+            <div className="flex flex-wrap items-center gap-3">
+              <Avatar
+                initials={initialsFor(profileName || fullName)}
+                color={selectedColor}
+                size={40}
+              />
+              <div className="flex flex-wrap gap-2">
+                {AVATAR_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-label={`Use colour ${c}`}
+                    aria-pressed={selectedColor === c}
+                    onClick={() => setSelectedColor(c)}
+                    className={cn(
+                      "h-6 w-6 rounded-full ring-offset-2 ring-offset-surface transition",
+                      selectedColor === c ? "ring-2 ring-brand-600" : "hover:opacity-80",
+                    )}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+              <Button
+                size="sm"
+                className="h-auto shrink-0"
+                onClick={saveAvatarColor}
+                disabled={colorState === "saving" || selectedColor === avatarColor}
+              >
+                {colorState === "saving" ? "Saving…" : "Save"}
+              </Button>
+            </div>
+            {colorState === "saved" && (
+              <p className="mt-1 text-xs font-medium text-emerald-600">
+                Saved to your profile.
+              </p>
+            )}
+            {colorState === "error" && (
+              <p className="mt-1 text-xs text-rose-600">
+                Couldn&apos;t save — please try again.
+              </p>
+            )}
+          </div>
+        )}
       </Widget>
 
       <Widget
@@ -231,6 +360,60 @@ export function AccountSettings({
             );
           })}
         </ul>
+      </Widget>
+
+      <Widget title="Security" icon={<KeyRound className="h-4 w-4 text-brand-600" />}>
+        {userId ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="New password">
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                minLength={MIN_PASSWORD_LENGTH}
+              />
+            </Field>
+            <Field label="Confirm password">
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                minLength={MIN_PASSWORD_LENGTH}
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              {passwordTouched && !passwordValid && (
+                <p className="mb-2 text-xs text-rose-600">
+                  {newPassword.length < MIN_PASSWORD_LENGTH
+                    ? `Use at least ${MIN_PASSWORD_LENGTH} characters.`
+                    : "The passwords don't match."}
+                </p>
+              )}
+              {passwordError && (
+                <p className="mb-2 text-xs text-rose-600">{passwordError}</p>
+              )}
+              {passwordState === "saved" && (
+                <p className="mb-2 text-xs font-medium text-emerald-600">
+                  Password updated.
+                </p>
+              )}
+              <Button
+                size="sm"
+                className="h-auto"
+                onClick={savePassword}
+                disabled={passwordState === "saving" || !passwordValid}
+              >
+                {passwordState === "saving" ? "Saving…" : "Update password"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-ink-muted">Sign in to manage your password.</p>
+        )}
       </Widget>
     </div>
   );

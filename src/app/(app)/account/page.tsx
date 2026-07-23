@@ -71,7 +71,11 @@ export default async function AccountPage() {
         </section>
 
         <div className="lg:col-span-2">
-          <AccountSettings fullName={user.name} email={user.email} />
+          <AccountSettings
+            fullName={user.name}
+            email={user.email}
+            avatarColor={user.avatarColor}
+          />
         </div>
       </div>
     </>
