@@ -40,6 +40,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
             user={user}
             courses={courses}
             authed={auth.authed}
+            role={auth.authed ? auth.role : undefined}
             upcoming={upcoming}
             recentGrades={recentGrades}
           />
