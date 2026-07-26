@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
-import type { Assignment, Course, User } from "@/lib/types";
+import type { Assignment, Course, Role, User } from "@/lib/types";
 import type { RecentGrade } from "@/lib/data";
 import { CourseSwitcher } from "./CourseSwitcher";
 import { GlobalSearch } from "./GlobalSearch";
@@ -17,12 +17,14 @@ export function TopBar({
   user,
   courses,
   authed = false,
+  role,
   upcoming,
   recentGrades,
 }: {
   user: User;
   courses: Course[];
   authed?: boolean;
+  role?: Role;
   upcoming?: Assignment[];
   recentGrades?: RecentGrade[];
 }) {
@@ -60,6 +62,8 @@ export function TopBar({
         <ThemeToggle />
         <NotificationBell
           authed={authed}
+          role={role}
+          courses={courses}
           upcoming={upcoming}
           recentGrades={recentGrades}
         />

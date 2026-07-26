@@ -6,6 +6,7 @@ import {
   Award,
   Bell,
   CalendarClock,
+  ClipboardCheck,
   ClipboardList,
   GraduationCap,
   Mail,
@@ -13,7 +14,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useLocalCollection } from "@/lib/local-store";
-import { fetchRecentRemoteAnnouncements } from "@/lib/course-content-db";
+import {
+  fetchRecentRemoteAnnouncements,
+  fetchRemoteAssignments,
+} from "@/lib/course-content-db";
+import { fetchCourseSubmissions } from "@/lib/gradebook-db";
+import { canTeach } from "@/lib/role";
 import { fetchMyMessages, type RemoteMessage } from "@/lib/inbox-db";
 import { fetchMyAwards, type Badge, type BadgeAward } from "@/lib/awards-db";
 import { fetchMyOpenSurveys, type Survey } from "@/lib/surveys-db";
@@ -22,7 +28,7 @@ import {
   fetchRemoteScholarships,
 } from "@/lib/roadmap-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
-import type { Announcement, Assignment } from "@/lib/types";
+import type { Announcement, Assignment, Course, Role } from "@/lib/types";
 import type { RecentGrade } from "@/lib/data";
 import { inboxSeed } from "@/lib/inbox-seed";
 import { seedApplications, seedScholarships } from "@/lib/roadmap/seed";
@@ -43,10 +49,14 @@ interface Note {
 
 export function NotificationBell({
   authed = false,
+  role,
+  courses,
   upcoming,
   recentGrades,
 }: {
   authed?: boolean;
+  role?: Role;
+  courses?: Course[];
   upcoming?: Assignment[];
   recentGrades?: RecentGrade[];
 }) {
@@ -132,6 +142,58 @@ export function NotificationBell({
       alive = false;
     };
   }, [authed]);
+
+  // Instructor grading backlog: per taught course, count turned-in-but-ungraded
+  // submissions per assignment. Same data path as NeedsGradingWidget so the two
+  // agree. Gated to teaching roles so students/parents never run these queries.
+  const [backlog, setBacklog] = useState<
+    {
+      assignmentId: string;
+      courseId: string;
+      title: string;
+      courseCode: string;
+      toGrade: number;
+    }[]
+  >([]);
+  const teaches = authed && !!role && canTeach(role);
+  const courseKey = (courses ?? []).map((c) => c.id).join(",");
+  useEffect(() => {
+    if (!teaches || !courses || courses.length === 0) return;
+    let alive = true;
+    (async () => {
+      const AWAITING = new Set(["submitted", "late"]);
+      const rows: typeof backlog = [];
+      await Promise.all(
+        courses.map(async (course) => {
+          const assignments = await fetchRemoteAssignments(course.id);
+          const ids = (assignments ?? []).map((a) => a.id);
+          if (ids.length === 0) return;
+          const submissions = (await fetchCourseSubmissions(ids)) ?? [];
+          const counts = new Map<string, number>();
+          for (const sub of submissions) {
+            if (!AWAITING.has(sub.status)) continue;
+            counts.set(sub.assignmentId, (counts.get(sub.assignmentId) ?? 0) + 1);
+          }
+          for (const a of assignments ?? []) {
+            const toGrade = counts.get(a.id) ?? 0;
+            if (toGrade === 0) continue;
+            rows.push({
+              assignmentId: a.id,
+              courseId: course.id,
+              title: a.title,
+              courseCode: course.code,
+              toGrade,
+            });
+          }
+        }),
+      );
+      if (alive) setBacklog(rows);
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teaches, courseKey]);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -308,8 +370,26 @@ export function NotificationBell({
       }
     }
 
+    // Instructor grading backlog (teaching roles only), five biggest queues.
+    // Current-state like the due-soon items, so timestamp them "now".
+    if (teaches) {
+      const now = new Date().toISOString();
+      const top = [...backlog].sort((a, b) => b.toGrade - a.toGrade).slice(0, 5);
+      for (const b of top) {
+        list.push({
+          id: `grade-backlog-${b.assignmentId}`,
+          icon: ClipboardCheck,
+          tone: "bg-amber-50 text-amber-600",
+          title: `${b.toGrade} to grade`,
+          detail: `${b.courseCode} · ${b.title}`,
+          href: `/courses/${b.courseId}/grades`,
+          at: now,
+        });
+      }
+    }
+
     return list.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-  }, [read.items, apps.items, scholarships.items, remoteApps, remoteScholarships, published, unreadMessages, earnedBadges, openSurveys, authed, upcoming, recentGrades]);
+  }, [read.items, apps.items, scholarships.items, remoteApps, remoteScholarships, published, unreadMessages, earnedBadges, openSurveys, authed, upcoming, recentGrades, teaches, backlog]);
 
   const count = mounted ? notes.length : 0;
 
