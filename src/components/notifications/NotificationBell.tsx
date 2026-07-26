@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Award,
   Bell,
   CalendarClock,
@@ -19,7 +20,15 @@ import {
   fetchRemoteAssignments,
 } from "@/lib/course-content-db";
 import { fetchCourseSubmissions } from "@/lib/gradebook-db";
-import { canTeach } from "@/lib/role";
+import {
+  fetchMyChildrenIds,
+  fetchChildNames,
+  fetchChildRecentGrades,
+  fetchChildRecentAbsences,
+  type ChildGrade,
+  type ChildAbsence,
+} from "@/lib/guardian-db";
+import { canTeach, isParent } from "@/lib/role";
 import { fetchMyMessages, type RemoteMessage } from "@/lib/inbox-db";
 import { fetchMyAwards, type Badge, type BadgeAward } from "@/lib/awards-db";
 import { fetchMyOpenSurveys, type Survey } from "@/lib/surveys-db";
@@ -194,6 +203,34 @@ export function NotificationBell({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teaches, courseKey]);
+
+  // Guardian view: a signed-in parent's linked child's recent grades and
+  // absences. Gated to the parent role so students/instructors never run
+  // these queries; RLS scopes every read to the caller's own children.
+  const parents = authed && !!role && isParent(role);
+  const [childGrades, setChildGrades] = useState<ChildGrade[]>([]);
+  const [childAbsences, setChildAbsences] = useState<ChildAbsence[]>([]);
+  const [childNames, setChildNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!parents) return;
+    let alive = true;
+    (async () => {
+      const ids = await fetchMyChildrenIds();
+      if (!alive || !ids || ids.length === 0) return;
+      const [names, grades, absences] = await Promise.all([
+        fetchChildNames(ids),
+        fetchChildRecentGrades(ids),
+        fetchChildRecentAbsences(ids),
+      ]);
+      if (!alive) return;
+      if (names) setChildNames(names);
+      if (grades) setChildGrades(grades);
+      if (absences) setChildAbsences(absences);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [parents]);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -388,8 +425,40 @@ export function NotificationBell({
       }
     }
 
+    // Guardian view (parent role only): a linked child's recent grades and
+    // absences. First name keeps each note short; course code is resolved
+    // from the seed catalogue by course_key when available.
+    if (parents) {
+      const firstName = (id: string) =>
+        (childNames[id] ?? "").trim().split(/\s+/)[0] || "Your child";
+      for (const g of childGrades.slice(0, 5)) {
+        const course = seed.courses.find((c) => c.id === g.courseKey);
+        list.push({
+          id: `child-grade-${g.studentId}-${g.gradedAt}-${g.assignmentTitle}`,
+          icon: GraduationCap,
+          tone: "bg-emerald-50 text-emerald-600",
+          title: `${firstName(g.studentId)}: ${g.assignmentTitle} graded`,
+          detail: `${course?.code ? `${course.code} · ` : ""}${g.score}/${g.points}`,
+          href: "/family",
+          at: g.gradedAt,
+        });
+      }
+      for (const a of childAbsences.slice(0, 5)) {
+        const course = seed.courses.find((c) => c.id === a.courseKey);
+        list.push({
+          id: `child-absence-${a.studentId}-${a.courseKey}-${a.onDate}`,
+          icon: AlertTriangle,
+          tone: "bg-rose-50 text-rose-600",
+          title: `${firstName(a.studentId)} marked absent`,
+          detail: `${course?.code ?? "a class"} · ${formatDate(a.onDate)}`,
+          href: "/family",
+          at: a.onDate,
+        });
+      }
+    }
+
     return list.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-  }, [read.items, apps.items, scholarships.items, remoteApps, remoteScholarships, published, unreadMessages, earnedBadges, openSurveys, authed, upcoming, recentGrades, teaches, backlog]);
+  }, [read.items, apps.items, scholarships.items, remoteApps, remoteScholarships, published, unreadMessages, earnedBadges, openSurveys, authed, upcoming, recentGrades, teaches, backlog, parents, childGrades, childAbsences, childNames]);
 
   const count = mounted ? notes.length : 0;
 
