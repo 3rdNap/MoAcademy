@@ -44,11 +44,18 @@ function toRow(g: GuideInput) {
   };
 }
 
-/** All shared guides, newest first — or null if no backend is reachable. */
+/** The guides the signed-in user is allowed to read (scoped to their enrolled
+ *  subjects by RLS — migration 0043), newest first. Returns null when no
+ *  backend is reachable OR nobody is signed in, so anonymous visitors fall
+ *  back to the bundled seed library instead of an empty shared list. */
 export async function fetchRemoteGuides(): Promise<StudyGuide[] | null> {
   const supabase = createSupabaseBrowserClient();
   if (!supabase) return null;
   try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
     const { data, error } = await supabase
       .from("study_guides")
       .select("*")

@@ -22,7 +22,7 @@ import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import { uploadStudyFile } from "@/lib/supabase/storage";
-import { fetchRemoteEnrolledSubjects } from "@/lib/billing/registration-db";
+import { fetchRemoteAllocatedSubjects } from "@/lib/billing/registration-db";
 import {
   addRemoteGuide,
   fetchRemoteGuides,
@@ -83,8 +83,9 @@ export function StudyGuidesBoard() {
     let alive = true;
     fetchRemoteGuides().then((g) => alive && setRemote(g));
     getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
-    // The subjects the academy has enrolled this student in unlock guides here.
-    fetchRemoteEnrolledSubjects().then(
+    // The subjects the academy has allocated this account — taken as a student
+    // or taught as an instructor — unlock the matching guides here.
+    fetchRemoteAllocatedSubjects().then(
       (s) => alive && s && setRemoteSubjects(s),
     );
     return () => {
