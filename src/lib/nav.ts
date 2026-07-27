@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import {
+  BookMarked,
   Calendar,
   Compass,
   GraduationCap,
@@ -34,6 +35,7 @@ export const globalNav: GlobalNavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Home, onMobileBar: true },
   { label: "Courses", href: "/courses", icon: LayoutGrid, onMobileBar: true },
   { label: "Study Guides", href: "/study-guides", icon: Library },
+  { label: "Textbooks", href: "/textbooks", icon: BookMarked },
   { label: "Assistant", href: "/assistant", icon: MoMarkIcon, onMobileBar: true },
   { label: "Practice", href: "/practice", icon: ListChecks, roles: ["student"] },
   { label: "Roadmap", href: "/roadmap", icon: Compass, onMobileBar: true, roles: ["student"] },
