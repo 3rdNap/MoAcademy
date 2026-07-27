@@ -17,8 +17,8 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { useRole } from "@/components/role/RoleProvider";
-import { canTeach } from "@/lib/role";
-import { fetchRemoteEnrolledSubjects } from "@/lib/billing/registration-db";
+import { canTeach, isAdmin } from "@/lib/role";
+import { fetchRemoteAllocatedSubjects } from "@/lib/billing/registration-db";
 import { subjects } from "@/lib/billing/subjects";
 import {
   addTextbook,
@@ -60,23 +60,27 @@ const emptyDraft: Draft = {
 export function TextbooksBoard() {
   const { role, hydrated } = useRole();
   const manage = hydrated && canTeach(role);
+  // Only admins (who publish across the institution) see every subject's
+  // books; students and instructors alike see just their own allocations.
+  const seeAll = hydrated && isAdmin(role);
 
   const [books, setBooks] = useState<Textbook[] | null>(null);
   const [signedIn, setSignedIn] = useState(false);
-  // Enrolled subject codes scope the student view; null means unscoped
-  // (signed out / offline / teaching account) — those see everything.
-  const [enrolledCodes, setEnrolledCodes] = useState<string[] | null>(null);
+  // Allocated subject codes scope the view — the subjects this account takes
+  // (student) or teaches (instructor). null means unavailable (signed out /
+  // offline), which combined with an empty list shows the sign-in prompt.
+  const [allocatedCodes, setAllocatedCodes] = useState<string[] | null>(null);
 
   useEffect(() => {
     let alive = true;
     fetchTextbooks().then((t) => alive && setBooks(t));
     getSignedInUserId().then((id) => alive && setSignedIn(Boolean(id)));
-    fetchRemoteEnrolledSubjects().then((names) => {
+    fetchRemoteAllocatedSubjects().then((names) => {
       if (!alive || names === null) return;
       const codes = subjects
         .filter((s) => names.includes(s.name))
         .map((s) => s.code);
-      setEnrolledCodes(codes);
+      setAllocatedCodes(codes);
     });
     return () => {
       alive = false;
@@ -87,15 +91,24 @@ export function TextbooksBoard() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [note, setNote] = useState("");
 
-  // Teaching accounts see every textbook; a student sees only those for the
-  // subjects the academy enrolled them in. When scoping is unavailable we
-  // leave the (empty for signed-out) list unfiltered.
+  // Admins see every textbook; students and instructors see only those for
+  // the subjects allocated to them. When scoping is unavailable we leave the
+  // (empty for signed-out) list unfiltered.
   const visible = useMemo(() => {
     const all = books ?? [];
-    if (manage || enrolledCodes === null) return all;
-    const set = new Set(enrolledCodes);
+    if (seeAll || allocatedCodes === null) return all;
+    const set = new Set(allocatedCodes);
     return all.filter((t) => set.has(t.subjectCode));
-  }, [books, manage, enrolledCodes]);
+  }, [books, seeAll, allocatedCodes]);
+
+  // Subjects offered in the add/edit form: an instructor can only author for
+  // the subjects allocated to them (RLS enforces this too); admins get the
+  // full catalogue.
+  const authorSubjects = useMemo(() => {
+    if (seeAll || allocatedCodes === null) return subjects;
+    const set = new Set(allocatedCodes);
+    return subjects.filter((s) => set.has(s.code));
+  }, [seeAll, allocatedCodes]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Textbook[]>();
@@ -112,7 +125,10 @@ export function TextbooksBoard() {
   }, [visible]);
 
   function openCreate() {
-    setDraft(emptyDraft);
+    setDraft({
+      ...emptyDraft,
+      subjectCode: authorSubjects[0]?.code ?? emptyDraft.subjectCode,
+    });
     setNote("");
     setOpen(true);
   }
@@ -411,7 +427,7 @@ export function TextbooksBoard() {
               value={draft.subjectCode}
               onChange={(e) => setDraft({ ...draft, subjectCode: e.target.value })}
             >
-              {subjects.map((s) => (
+              {authorSubjects.map((s) => (
                 <option key={s.code} value={s.code}>
                   {s.name}
                 </option>

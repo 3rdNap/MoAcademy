@@ -183,3 +183,31 @@ export async function fetchRemoteEnrolledSubjects(): Promise<string[] | null> {
     return null;
   }
 }
+
+/**
+ * Subject names the signed-in user is *allocated* — every subject they are
+ * attached to in `subject_enrollments`, whether as a student or as an
+ * instructor, across any term. This is the access set for a person's own
+ * textbook / study-guide library (a student sees the subjects they take; an
+ * instructor sees the subjects they teach). Null on any error / missing
+ * backend / signed-out so callers fall back to the local demo store.
+ */
+export async function fetchRemoteAllocatedSubjects(): Promise<string[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("subject_enrollments")
+      .select("subject_code")
+      .eq("user_id", user.id);
+    if (error || !data) return null;
+    const codes = new Set(data.map((r) => r.subject_code as string));
+    return subjects.filter((s) => codes.has(s.code)).map((s) => s.name);
+  } catch {
+    return null;
+  }
+}
