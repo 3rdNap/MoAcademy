@@ -4,38 +4,33 @@
 
 # MoAcademy
 
-**Smart Learning.** A modern **Learning Management System** built with Next.js,
-TypeScript, Tailwind CSS, and Supabase. The interface blends the strongest patterns from
-**Canvas** and **D2L Brightspace**:
+**Smart Learning.** A full **institutional Learning Management System** built with
+Next.js, TypeScript, Tailwind CSS, and Supabase, modelled on **D2L Brightspace**
+and **Canvas**. MoAcademy runs as a school, not a self-service signup: an admin
+office issues accounts and enrols people, instructors teach and assess, students
+learn, and guardians follow along.
 
-- **Canvas-style global navigation rail** (Dashboard, Courses, Calendar, Inbox,
-  Grades) and colorful **course cards** with quick links.
-- **Brightspace-style homepage widgets** — an activity/Pulse feed, an
-  "Upcoming" agenda, and announcements — plus a "waffle" **course switcher** in
-  the top bar.
-- A per-course left navigation (Home · Announcements · Modules · Assignments ·
-  Grades · Discussions · People) under a colored course banner.
+- **Canvas-style global rail** (Dashboard, Courses, Calendar, Inbox, …) with
+  colourful course cards, and **Brightspace-style homepage widgets** and a
+  top-bar course switcher.
+- **Role-catered dashboards** — a student, instructor, admin, and parent each
+  get a home built for what they actually do (no shared/generic view).
+- **Per-course tools:** Home · Syllabus · Modules · Assignments · Discussions ·
+  Grades · People · Attendance · Groups · Awards · Surveys · Insights ·
+  Office hours.
 
-> The app runs **out-of-the-box on bundled seed data** — no backend or config
-> required. Add Supabase credentials for live accounts + shared data, and an
-> `ANTHROPIC_API_KEY` to switch on Mo, the AI layer (tutor chat, practice
-> quizzes, study plans, authoring assists).
-
-Also part of the platform: a **public landing page** at `/` (the app lives
-under its own route group with the nav chrome), a **web app manifest** so the
-site installs to a phone's home screen with the logo as its icon, a
-pre-launch `robots.txt` block (flip `PRELAUNCH` in `src/app/robots.ts` at
-launch), and **database-backed publishing** — admin study guides, instructor
-announcements and assignments, and per-student registrations/invoices are
-stored in Supabase and visible across devices, with RLS enforcing who can
-write what.
+> The app runs **out-of-the-box on bundled seed data** — no backend required, so
+> anonymous visitors always see a working demo. Add Supabase credentials for
+> real accounts and shared data, and an `ANTHROPIC_API_KEY` to switch on **Mo**,
+> the AI layer (tutor chat, practice quizzes, study plans, authoring assists,
+> early-warning check-ins).
 
 ## Quick start
 
 ```bash
 npm install
 npm run dev
-# open http://localhost:3000  (redirects to /dashboard)
+# open http://localhost:3000
 ```
 
 ## Tech stack
@@ -46,275 +41,151 @@ npm run dev
 | Language   | TypeScript                                        |
 | Styling    | Tailwind CSS + a custom `brand` design token set  |
 | Icons      | lucide-react                                      |
-| Backend    | Supabase (Postgres + Auth) — optional             |
+| Backend    | Supabase (Postgres + Auth + Storage) — optional   |
+| AI         | Claude via the Anthropic API — optional           |
 
-## Connecting Supabase (optional)
+## Configuration
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. Copy `.env.example` to `.env.local` and fill in:
+Copy `.env.example` to `.env.local`:
 
-   ```
-   NEXT_PUBLIC_SUPABASE_URL=...
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-   ```
+```
+NEXT_PUBLIC_SUPABASE_URL=...        # live accounts + shared data
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...       # admin provisioning (create user, reset password, bulk import, enrol)
+ANTHROPIC_API_KEY=...               # Mo, the AI layer
+# optional: ASSISTANT_MODEL=claude-fable-5
+```
 
-3. Apply the schema in `supabase/migrations/` (via the Supabase SQL editor or
-   `supabase db push`) — `0001_init.sql` for courses, `0002_roadmap.sql` for
-   the University Roadmap.
-4. Restart the dev server. The data layer (`src/lib/data/index.ts`)
-   automatically prefers Supabase when env vars are present and falls back to
-   seed data otherwise, so the UI never breaks.
+Every capability degrades gracefully: with no Supabase env the app serves the
+bundled demo; without the service-role key the admin provisioning actions show
+a "not configured" note; without the Anthropic key every Mo surface renders a
+friendly disabled state. Visit **`/api/status`** on any deployment to see which
+of `supabase` / `roleManagement` / `assistant` are live.
 
-## University Roadmap
+Apply the SQL in `supabase/migrations/` in order (Supabase SQL editor or
+`supabase db push`) — the schema spans `0001`–`0040`. Then, in the Supabase
+dashboard, enable **Auth → Leaked Password Protection** (the one hardening step
+that isn't code). `supabase/tests/security_invariants.sql` is a roll-back-only
+script that re-verifies the security-critical RLS/RPC guards after any migration.
 
-A student-owned planning space (global nav → **Roadmap**) for life beyond the
-current courses. All content is **added and edited by the student** in-app —
-because requirements, dates and offers change over time — and persists in the
-browser (`localStorage`) with **no backend required**. Three tabs:
+## Operating the institution
 
-- **My Goals** — target institutions/programmes with the requirements to get in.
-  Captures not just the published minimums but the **competitive marks that make
-  admission safe** (min vs. "safe" APS and per-subject bars), with a tick-off
-  checklist and gap tracking.
-- **Applications** — each institution's opening/closing dates, a link to the
-  online application portal, the prospectus (link **or uploaded file**), and an
-  application status, with deadline countdowns.
-- **Scholarships & Bursaries** — opportunities with what they cover, their
-  requirements, closing dates and apply links.
+The setup sequence for a live deployment:
 
-The same shapes map to `supabase/migrations/0002_roadmap.sql` for when you want
-roadmap data stored server-side per student.
+1. **Create the first admin.** Sign a user up (or insert a `profiles` row) and
+   set their `role` to `admin`. Admins are authoritative from `profiles.role`.
+2. **Add people.** Admin console (`/admin`) → **Add person** issues a
+   `name@moacademy.com` login + temporary password, or **Import people** takes a
+   `name,role,subjects` CSV and provisions a whole cohort at once (credentials
+   returned for distribution). The address is a **login identity, not a mailbox**.
+3. **Enrol subjects.** Each person's **Subjects** control assigns their subjects
+   for the active term. Instructor-role enrolments double as teaching
+   assignments — they drive gradebook access, rosters, and instructor names.
+4. **Set the term.** The **Term** control advances the active semester
+   (`app_settings.current_term`); enrolments are per-term, so old terms remain
+   as history.
 
-## Roles & access (student · instructor · admin · parent)
+New accounts carry `must_change_password` and are funnelled to
+`/account/set-password` on first sign-in. Admins can reset any forgotten
+password from the console.
 
-A **"Viewing as"** switcher in the top bar previews the app as a **Student**,
-**Instructor**, **Admin**, or **Parent** (Canvas-style Student View).
+## Roles
 
-### Admin console
+Roles are authoritative from `profiles.role` for signed-in users; the anonymous
+demo previews roles via a top-bar switcher (`src/components/role/`).
 
-Previewing as **Admin** reveals an **Admin** entry in the global nav (and a
-dashboard banner). The console (`/admin`) shows institution-wide stats (students,
-instructors, courses, assignments, average progress), a courses table
-(instructor, credits, published status), and a people list. See
-`src/components/admin/AdminConsole.tsx`.
+- **Student** — enrolled courses, coursework, grades, report card, planning
+  tools (Roadmap, Practice), calendar, inbox.
+- **Instructor** — a teaching dashboard with a **needs-grading queue**, their
+  taught courses, and full authoring/assessment inside each course.
+- **Admin** — a Brightspace-style operations dashboard (active users, courses
+  per term, system health, unread messages) and the console: people, roles,
+  passwords, bulk import, enrolments by subject, reports (CSV), term control.
+- **Parent/guardian** — a read-only family portal of their linked child's
+  courses, grades, attendance, and a printable report card.
 
-### Parent / Family dashboard
+## Course tools
 
-Previewing as **Parent** reveals a **Family** entry in the global nav (and a
-banner on the dashboard). The Family page (`/family`) lets a guardian pick a
-child and see that child's **overall average**, each **course with its current
-grade + progress**, **upcoming deadlines**, **recent grades**, and
-**announcements**. Demo children reuse the seed academics with a per-child grade
-offset; in production this maps to guardian↔student links. See
-`src/components/family/FamilyDashboard.tsx` and `src/lib/family.ts`. The active role is held
-in a client `RoleProvider` (persisted in the browser) and gates teaching UI:
+Each course (`/courses/[id]`) carries the full Brightspace-style toolset, with a
+`useRole`/`canTeach` split — teaching accounts author, everyone else consumes:
 
-- **Course pages** show an **Instructor tools** bar (add content, gradebook,
-  people, student view, publish) for teaching roles.
-- **Modules** and **Assignments** show **+ Add** actions for instructors.
-- The **dashboard** shows a teaching-preview banner; the **account** page shows
-  the role currently being previewed.
-
-This is the UI foundation for role-aware access; it maps directly onto the
-`role` on the authenticated user once Supabase Auth is connected (`profiles.role`
-already exists in `0001_init.sql`). Gates live in
-`src/components/role/` (`RoleProvider`, `RoleSwitcher`, `InstructorOnly`, …).
-
-### Instructor authoring
-
-While previewing a teaching role, instructors can **author course content**:
-
-- **Assignments** — create / edit / delete assignments (title, type, due date,
-  points, description).
-- **Modules** — create modules (publish/unpublish) and add or remove items
-  within them.
-- **Announcements** — instructors can post / edit / delete course announcements,
-  merged with the existing ones and tagged "Posted by you".
-- **Gradebook** — the course **Grades** page is role-aware: students see their
-  own grade table, while instructors get an editable class gradebook (students ×
-  assignments) with auto-saving score cells, per-student totals, and per-
-  assignment class averages.
-
-Authored content is layered on top of the seed data and persists per course in
-the browser (`moacademy.authoring.*`, `moacademy.gradebook.*`); students see it
-read-only alongside the existing content. The boards live in
-`src/components/courses/`. Wiring this to the Supabase tables in `0001_init.sql`
-is the path to shared, server-side authoring.
-
-## Billing & Registration
-
-A paid registration dashboard (global nav → **Billing**). **There is no free
-plan** — registration is priced **per subject**, and a **volume discount** means
-the total is always less than the subjects added up individually, so the
-effective price per subject falls as you register more.
-
-- A subject catalog (grouped by category) where each subject shows its own
-  per-term price; pick the subjects you want to register.
-- A live summary: subtotal, the bulk-discount tier reached, the amount saved,
-  the total due, and the **effective price per subject** (highlighted).
-- A "How bulk pricing works" tier table that highlights your current tier and
-  nudges you toward the next discount.
-
-Pricing logic is in `src/lib/billing/pricing.ts` (discount tiers
-0/5/10/15/20/25/30%, capped at 7+ subjects). The discount guarantees the
-per-subject rate strictly decreases and the total is less than the sum for two
-or more subjects. The schema is in `supabase/migrations/0003_billing.sql`
-(subjects, registrations, registration_items) with per-student RLS.
-
-The **Register** tab leads to a **checkout** (payer details + payment method →
-confirmation with an invoice number), and paid registrations are kept under the
-**My Registrations** tab as printable invoices — each capturing the subjects,
-the bulk discount applied, and the total at the time of payment. All of this
-persists in the browser; the same shapes map to the billing migration.
-
-## Discussions
-
-The course **Discussions** tab is interactive: open any thread to read and
-**post replies**, delete your own, and **start new topics**. Seed discussion
-items from the modules appear as starter threads; topics and replies persist per
-course in the browser (`moacademy.discussions.*`). Lives in
-`src/components/courses/DiscussionsBoard.tsx`.
-
-## Assignment submissions
-
-On the **Assignments** tab, students can **submit work** (a text response and/or
-an attached file) for any not-yet-graded assignment, and resubmit until it's
-graded. The status flips to **Submitted** with a timestamp. Submissions persist
-per course in the browser (`moacademy.submissions.*`).
-
-## Inbox
-
-The **Inbox** is interactive: open a conversation to read the thread and **reply**
-(chat-style bubbles), and **compose** a new message with recipient suggestions
-(course instructors + classmates). Opening a conversation clears its unread dot;
-sent conversations and replies persist in the browser (`moacademy.inbox.*`).
-Lives in `src/components/inbox/InboxBoard.tsx`.
-
-## Account settings
-
-The **Account** page persists your preferences: an editable **display name** and
-**time zone**, plus **notification toggles** (announcements, grades, due-date
-reminders, discussion replies). Changes save to the browser as you make them
-(`moacademy.account.*`) with a brief "Saved" confirmation. Lives in
-`src/components/account/AccountSettings.tsx`.
-
-## Calendar
-
-The **Calendar** agenda merges course deadlines (seed) with your own **personal
-events** — add, edit, and delete events (title, date/time, type) that appear
-inline alongside coursework. Personal events persist in the browser
-(`moacademy.calendar.events`). Lives in
-`src/components/calendar/CalendarBoard.tsx`.
-
-## Light / dark theme
-
-A **light/dark theme toggle** (sun/moon in the top bar) switches the whole app.
-Semantic color tokens (`ink`, `surface`) are CSS variables with a `.dark`
-override (`globals.css`), so components adapt automatically. The choice persists
-in the browser (`moacademy.theme`) and an inline script in the root layout
-applies it before first paint to avoid a flash; unset follows the OS preference.
-Toggle in `src/components/layout/ThemeToggle.tsx`.
-
-## Study Guides
-
-A library (global nav → **Study Guides**) of PDF study guides, each with a
-**thumbnail** and tagged to a **subject**.
-
-- **Admins upload** (add / edit / delete) — students get a read-only view.
-- Each guide is tagged to a **subject** from the registerable catalog.
-- **Students only see guides for the subjects they've registered** (from their
-  Billing registrations), grouped by subject; if they haven't registered any,
-  the tab points them to Billing.
-
-Upload a PDF and a thumbnail image (or paste links); guides without a thumbnail
-get a generated gradient cover. Guide metadata persists in the browser (`moacademy.studyGuides`). **Uploads go to
-Supabase Storage** when you're signed in and a public `study-guides` bucket
-exists (`src/lib/supabase/storage.ts`) — no size limit; otherwise they fall back
-to a size-guarded browser copy. The metadata table, RLS, and bucket setup are in
-`supabase/migrations/0005_study_guides.sql`. See
-`src/components/study/StudyGuidesBoard.tsx`.
+- **Modules** — content items that hold a page, an uploaded file
+  (`course-files` bucket), or a link/video; every item is click-through, with
+  per-student completion tracking.
+- **Assignments** — files/text submissions to a private bucket (signed-URL
+  downloads), weighted **assignment groups**, **rubrics** (criterion grading),
+  late-flagging, feedback, and a CSV grade export.
+- **Quizzes** — MCQ (answer keys in a teacher-only table) **and** written
+  questions, multiple attempts, auto-graded server-side by the
+  `submit_quiz_attempt` RPC; import questions from any quiz you teach.
+- **Discussions** — threaded topics and nested replies.
+- **Attendance** — per-date registers (present/absent/late/excused) with term
+  rates; **Office hours** — instructor slots students book (row-locked RPCs).
+- **Groups**, **Awards** (badges), **Surveys** (anonymous, with honest
+  DB-level unlinking), and **Insights** (Mo's early-warning dashboard).
 
 ## Mo — the AI layer
 
-**Mo** is MoAcademy's AI, powered by **Claude** (`claude-opus-4-8` by default;
-set `ASSISTANT_MODEL=claude-fable-5` for the top tier). One server-side
-`ANTHROPIC_API_KEY` switches on the whole suite — the key never reaches the
-browser, and every feature renders a friendly "not configured" state without
-it. Mo wears the blue "mo" logo mark everywhere she appears.
+**Mo** is MoAcademy's AI, powered by **Claude** (`claude-opus-4-8` default; set
+`ASSISTANT_MODEL=claude-fable-5` for the top tier). One server-side
+`ANTHROPIC_API_KEY` switches on the whole suite; the key never reaches the
+browser.
 
-- **Study Assistant** (nav → Assistant) — a streaming tutor chat grounded in
-  the student's own courses, deadlines and registered-subject study guides,
-  with optional **live web search**. Conversations persist across visits, can
-  be stopped mid-answer, and deep-link from any course banner or study-guide
-  card ("Ask Mo") with a dismissible topic chip. `src/app/api/chat/route.ts` +
-  `src/components/assistant/`.
-- **Practice** (nav → Practice) — Mo writes a fresh multiple-choice quiz on
-  any topic (suggestions come from the student's subjects and guides), marks
-  each answer instantly with a teaching explanation, and keeps recent scores.
-  Strict-JSON generation validated server-side in `src/app/api/quiz/route.ts`.
-- **Mo's study plan** (dashboard widget) — a 7-day plan built from real
-  assignment deadlines, registered subjects, and practice-quiz weak spots
-  (topics under 70% get revision scheduled). `src/app/api/plan/route.ts`.
-- **Draft with Mo** (instructors) — in the assignment and announcement
-  editors, Mo writes the student-facing text from just a title, editable
-  before publishing. **Mo's summary for parents** — the Family page turns a
-  child's grades and deadlines into a short plain-language recap.
-  Both via `src/app/api/generate/route.ts`.
+- **Study Assistant** — a streaming tutor chat grounded in the student's real
+  courses, deadlines and study guides, with optional web search.
+- **Practice** — fresh MCQ quizzes on any topic, marked instantly.
+- **Study plan** — a 7-day plan from real deadlines and quiz weak spots.
+- **Insights + check-ins** — instructors see per-student risk (grades, missing
+  work, attendance) and have Mo draft a warm outreach message.
+- **Family digest** — a plain-language recap of a child's week for guardians.
+- **Draft with Mo** — assignment/announcement text from a title.
 
-## Pinned courses
+## Personal planning (student-owned, server-synced)
 
-Star any course (top-left of its card) to **pin** it; pinned courses appear in a
-quick-access **Pinned** strip at the top of the dashboard. Pins persist in the
-browser (`moacademy.pinnedCourses`). See `src/components/dashboard/CourseStar.tsx`
-and `PinnedCourses.tsx`.
+- **University Roadmap** — target institutions/programmes with min-vs-competitive
+  admission bars, application windows, and scholarships.
+- **Study Guides** — a subject-tagged PDF library, scoped to the student's
+  enrolments; admins upload.
+- Practice history and personal calendar events sync per account too.
 
-## Global search
+## Scheduled automation (Intelligent Agents)
 
-The top-bar search box is a live, keyboard-driven search across **courses,
-assignments, content items, and pages**. Results appear as you type (matching
-title or code/subtitle), **Enter** opens the top hit, and **Esc** closes. Lives
-in `src/components/layout/GlobalSearch.tsx`.
+`pg_cron` runs nightly agents that message students in-app (from their
+instructor) about upcoming and overdue unsubmitted work, deduped per
+assignment. Admins toggle agents and read the run log in the console
+(`automation_agents` / `automation_log`, migration 0039).
 
-## Notifications
+## Architecture notes
 
-The top-bar **bell** opens a notifications panel that aggregates what needs
-attention: unread inbox messages, roadmap application/scholarship deadlines
-closing within 14 days, assignments due within 7 days, and recently posted
-grades — each linking to the right page. The badge count is computed from the
-same browser data the rest of the app uses. Lives in
-`src/components/notifications/NotificationBell.tsx`.
+- **Supabase-first with graceful degradation** — server data comes from
+  `src/lib/data`; every query falls back to bundled seed on error/missing
+  backend. Browser-side data modules (`src/lib/*-db.ts`) return null/false on
+  error so components degrade to the local demo.
+- **RLS everywhere** — security-definer helpers live in a non-API `private`
+  schema (`is_admin`, `is_guardian_of`, `teaches_course`, `teaches_assignment`,
+  `shares_subject_with`, `can_message`, …). A field-level trigger separates
+  student-owned submission columns from grading columns; sensitive writes
+  (quiz grading, survey submission, office-hours booking) go through
+  SECURITY DEFINER RPCs.
+- See `CLAUDE.md` for the working conventions and the full model.
 
 ## Project structure
 
 ```
 src/
-  app/                     App Router pages
-    dashboard/             Blended Canvas/Brightspace home
-    courses/               Course list
-    courses/[courseId]/    Course shell + Home/Modules/Assignments/Grades/…
-    roadmap/               University Roadmap: Goals/Applications/Scholarships
-    calendar/  inbox/  grades/  account/
-  components/
-    layout/                GlobalNav, TopBar, CourseSwitcher, CourseNav, AppShell
-    dashboard/             CourseCard, ActivityFeed, UpcomingList
-    roadmap/               GoalsBoard, ApplicationsBoard, ScholarshipsBoard, tabs
-    ui/                    Avatar, Badge, Button, Modal, form, ProgressBar, Widget
+  app/(app)/               Routed pages under the nav chrome
+    dashboard/ courses/ courses/[courseId]/{modules,assignments,grades,
+      discussions,people,attendance,groups,awards,surveys,insights,
+      syllabus,office-hours}
+    admin/ family/ report/ calendar/ inbox/ grades/ roadmap/ practice/
+      study-guides/ assistant/ account/
+    api/                   chat, quiz, plan, generate, admin/*, guardians, status
+  components/              layout, dashboard, courses, admin, family, role, ui, …
   lib/
-    data/                  Data-access layer (Supabase → seed fallback) + seed
-    roadmap/               Roadmap types, seed, localStorage store, deadlines
-    supabase/              Browser/server clients + env detection
-    types.ts  nav.ts  utils.ts  itemMeta.tsx
+    data/                  Server data-access layer (Supabase → seed) + seed
+    *-db.ts                Browser data modules (gradebook, quiz, groups, …)
+    supabase/  billing/  roadmap/  admin/  types.ts  nav.ts  role.ts
 supabase/
-  migrations/0001_init.sql     Course/LMS schema
-  migrations/0002_roadmap.sql  University Roadmap schema
+  migrations/0001–0040     Schema, RLS, RPCs, storage buckets, pg_cron
+  tests/security_invariants.sql
 ```
-
-## Roadmap
-
-This is the **core LMS shell + courses** foundation. Natural next steps:
-
-- Authentication flows (sign-in/up) wired to Supabase Auth.
-- Assignment submission + grading workflows and a real gradebook.
-- Rich content pages and a module editor for instructors.
-- Threaded discussions and real-time inbox messaging.
-- Role-aware views (student vs. instructor vs. admin).
