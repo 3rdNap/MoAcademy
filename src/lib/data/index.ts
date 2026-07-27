@@ -1106,6 +1106,70 @@ export async function getCourseOfficeHours(
   }
 }
 
+export interface CourseTextbook {
+  id: string;
+  title: string;
+  author: string;
+  edition: string;
+  isbn: string;
+  required: boolean;
+  coverUrl?: string;
+  resourceUrl?: string;
+  filePath?: string;
+}
+
+interface RawCourseTextbook {
+  id: string;
+  title: string;
+  author: string;
+  edition: string;
+  isbn: string;
+  required: boolean;
+  cover_url: string | null;
+  resource_url: string | null;
+  file_path: string | null;
+}
+
+function mapCourseTextbook(r: RawCourseTextbook): CourseTextbook {
+  return {
+    id: r.id,
+    title: r.title,
+    author: r.author,
+    edition: r.edition,
+    isbn: r.isbn,
+    required: r.required,
+    coverUrl: r.cover_url ?? undefined,
+    resourceUrl: r.resource_url ?? undefined,
+    filePath: r.file_path ?? undefined,
+  };
+}
+
+/** Required/recommended reading for a course (migration 0042). A course's id
+ *  is the subject id (e.g. sub_math); textbooks key on subject *code* (MATH),
+ *  so resolve via the subjects catalogue. RLS requires a signed-in user, so
+ *  the anonymous demo also gets [] here — same house pattern as [] on error. */
+export async function getCourseTextbooks(
+  courseId: string,
+): Promise<CourseTextbook[]> {
+  const code = subjects.find((s) => s.id === courseId)?.code;
+  if (!code) return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data } = await supabase
+      .from("textbooks")
+      .select("*")
+      .eq("subject_code", code)
+      .order("required", { ascending: false })
+      .order("title");
+    return (data ?? []).map((r) =>
+      mapCourseTextbook(r as unknown as RawCourseTextbook),
+    );
+  } catch {
+    return [];
+  }
+}
+
 export const getModules = cache(async (courseId: string): Promise<CourseModule[]> => {
   const { authed } = await getAuthState();
   // Seed modules are demo-only; signed-in users see just real content.
