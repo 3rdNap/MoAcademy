@@ -366,6 +366,33 @@ export const getCourseRoster = cache(
 );
 
 /**
+ * Everyone a signed-in user shares a subject with — their teachers first, then
+ * classmates, deduped across courses and excluding themselves. Used for inbox
+ * recipient suggestions. Empty for anonymous visitors, who keep the demo names.
+ */
+export const getContacts = cache(async (): Promise<RosterMember[]> => {
+  const { authed, userId } = await getAuthState();
+  if (!authed) return [];
+  const courses = await getCourses();
+  const rosters = await fetchRosters(courses.map((c) => c.code));
+  const byId = new Map<string, RosterMember>();
+  for (const members of rosters.values()) {
+    for (const member of members) {
+      if (member.id === userId) continue;
+      // A teacher in one subject and a classmate in another: keep the teacher.
+      const seen = byId.get(member.id);
+      if (!seen || (seen.role === "student" && member.role === "instructor")) {
+        byId.set(member.id, member);
+      }
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => {
+    if (a.role !== b.role) return a.role === "instructor" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+});
+
+/**
  * Replace the placeholder instructor on subject-derived courses with whoever
  * the admin actually assigned to teach them. Courses without an assignment keep
  * their "To be assigned" placeholder.

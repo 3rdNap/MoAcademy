@@ -114,8 +114,16 @@ and hands back **contact details only for a subject the caller teaches**.
 Classmates see a name and an avatar, nothing more. Widening the table policies
 instead would have exposed every profile column to every classmate.
 
+The same roster drives the rest of the class-aware UI:
+
+- the instructor **gradebook** grades the actual enrolled students (an empty
+  class gets an empty-state, not fictional names);
+- **inbox** recipient suggestions are the real people you share a subject with,
+  teachers first.
+
 Signed-in users never fall back to the demo class: with no one else enrolled yet
-the tab shows just you and says so. Anonymous visitors still get the seed roster.
+the tab shows just you and says so, and the inbox starts empty instead of
+showing the tour's demo threads. Anonymous visitors still get the seed roster.
 
 ### Parent / Family dashboard
 
@@ -152,7 +160,8 @@ While previewing a teaching role, instructors can **author course content**:
 - **Gradebook** — the course **Grades** page is role-aware: students see their
   own grade table, while instructors get an editable class gradebook (students ×
   assignments) with auto-saving score cells, per-student totals, and per-
-  assignment class averages.
+  assignment class averages. The rows are the **real enrolled class** when
+  signed in (see [Class rosters](#class-rosters)).
 
 Authored content is layered on top of the seed data and persists per course in
 the browser (`moacademy.authoring.*`, `moacademy.gradebook.*`); students see it
@@ -204,9 +213,11 @@ per course in the browser (`moacademy.submissions.*`).
 ## Inbox
 
 The **Inbox** is interactive: open a conversation to read the thread and **reply**
-(chat-style bubbles), and **compose** a new message with recipient suggestions
-(course instructors + classmates). Opening a conversation clears its unread dot;
-sent conversations and replies persist in the browser (`moacademy.inbox.*`).
+(chat-style bubbles), and **compose** a new message with recipient suggestions —
+the real teachers and classmates you share a subject with when signed in, the
+demo class when browsing anonymously. Opening a conversation clears its unread
+dot; sent conversations and replies persist in the browser (`moacademy.inbox.*`).
+A signed-in inbox starts empty rather than seeded with the tour's demo threads.
 Lives in `src/components/inbox/InboxBoard.tsx`.
 
 ## Account settings

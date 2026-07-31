@@ -68,7 +68,9 @@ The app runs as an institution, not a self-service signup:
   in (admins: all) and only exposes emails for a subject the caller teaches. Use
   it rather than widening the `profiles` / `subject_enrollments` RLS policies —
   those are row-level, so a classmate policy would leak every profile column.
-  It also fills each course's real instructor name (`withAssignedInstructors`).
+  It also fills each course's real instructor name (`withAssignedInstructors`)
+  and backs `getContacts()` (inbox recipients) and the instructor gradebook's
+  student rows, which the server pages pass down to the client islands.
 - Migrations **0017** (guardians), **0018** (enrolments) and **0019** (rosters)
   must be applied to the live DB for these to work; code degrades gracefully
   (caught errors → fallback) until then. Service-role key required for the admin

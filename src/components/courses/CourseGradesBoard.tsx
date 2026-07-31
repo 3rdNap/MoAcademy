@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
@@ -16,12 +17,22 @@ interface GradeCell {
   score: number;
 }
 
+/** A student to grade — a real enrolment, or a demo one for anonymous visits. */
+export interface GradebookStudent {
+  id: string;
+  name: string;
+  avatarColor: string;
+}
+
 export function CourseGradesBoard({
   course,
   seed,
+  students,
 }: {
   course: Course;
   seed: Assignment[];
+  /** The enrolled class; `null` falls back to the demo roster. */
+  students?: GradebookStudent[] | null;
 }) {
   const { role, hydrated } = useRole();
   const teaching = hydrated && canTeach(role);
@@ -42,7 +53,17 @@ export function CourseGradesBoard({
   if (!teaching) {
     return <StudentGrades course={course} assignments={assignments} />;
   }
-  return <InstructorGradebook course={course} assignments={assignments} />;
+  return (
+    <InstructorGradebook
+      course={course}
+      assignments={assignments}
+      students={
+        students === undefined || students === null
+          ? roster.map((s) => ({ ...s, avatarColor: "#8b94a3" }))
+          : students
+      }
+    />
+  );
 }
 
 /* ----------------------------- Student view ----------------------------- */
@@ -122,9 +143,11 @@ function StudentGrades({
 function InstructorGradebook({
   course,
   assignments,
+  students,
 }: {
   course: Course;
   assignments: Assignment[];
+  students: GradebookStudent[];
 }) {
   const grades = useLocalCollection<GradeCell>(
     `moacademy.gradebook.${course.id}`,
@@ -162,7 +185,7 @@ function InstructorGradebook({
   }
 
   function assignmentAvg(aid: string, points: number) {
-    const scores = roster
+    const scores = students
       .map((s) => getScore(s.id, aid))
       .filter((v): v is number => v != null);
     if (scores.length === 0) return null;
@@ -170,11 +193,36 @@ function InstructorGradebook({
     return Math.round((avg / points) * 100);
   }
 
+  if (students.length === 0) {
+    return (
+      <>
+        <PageHeader
+          title="Gradebook"
+          subtitle={`${assignments.length} assignments in ${course.code}.`}
+        />
+        <div className="card flex flex-col items-center gap-3 p-12 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15">
+            <Users className="h-6 w-6" />
+          </span>
+          <div>
+            <p className="font-semibold text-ink">No students enrolled yet</p>
+            <p className="mt-1 text-sm text-ink-muted">
+              Once an administrator enrols students into {course.code}, they
+              appear here with a column for every assignment.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader
         title="Gradebook"
-        subtitle={`${roster.length} students · ${assignments.length} assignments in ${course.code}. Enter scores — they save automatically.`}
+        subtitle={`${students.length} ${
+          students.length === 1 ? "student" : "students"
+        } · ${assignments.length} assignments in ${course.code}. Enter scores — they save automatically.`}
       />
 
       <div className="card overflow-x-auto">
@@ -198,7 +246,7 @@ function InstructorGradebook({
             </tr>
           </thead>
           <tbody className="divide-y divide-black/5">
-            {roster.map((s) => {
+            {students.map((s) => {
               const pct = studentPct(s.id);
               return (
                 <tr key={s.id} className="hover:bg-surface-subtle">
@@ -206,7 +254,7 @@ function InstructorGradebook({
                     <span className="flex items-center gap-2">
                       <Avatar
                         initials={initialsOf(s.name)}
-                        color="#8b94a3"
+                        color={s.avatarColor}
                         size={28}
                       />
                       <span className="whitespace-nowrap text-sm font-medium text-ink">
