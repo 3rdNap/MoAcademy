@@ -286,6 +286,103 @@ function subjectToCourse(s: Subject): Course {
   };
 }
 
+export interface RosterMember {
+  id: string;
+  name: string;
+  /** Login identity — only returned to the people who teach the subject. */
+  email: string | null;
+  avatarColor: string;
+  role: "student" | "instructor";
+}
+
+export interface CourseRoster {
+  instructors: RosterMember[];
+  students: RosterMember[];
+}
+
+interface RawRosterRow {
+  subject_code: string;
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+  avatar_color: string | null;
+  enrol_role: string;
+}
+
+/**
+ * Enrolment rosters for a set of subject codes, keyed by code, via the guarded
+ * `subject_rosters` reader (migration 0019). Comes back empty for anonymous
+ * visitors, an un-migrated database, or subjects the caller isn't part of — so
+ * callers fall back to the demo class rather than showing an empty room.
+ */
+async function fetchRosters(
+  codes: string[],
+): Promise<Map<string, RosterMember[]>> {
+  const byCode = new Map<string, RosterMember[]>();
+  if (codes.length === 0) return byCode;
+  const { authed } = await getAuthState();
+  if (!authed) return byCode;
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return byCode;
+  try {
+    const { data, error } = await supabase.rpc("subject_rosters", {
+      p_codes: codes,
+      p_term: CURRENT_TERM,
+    });
+    if (error) return byCode;
+    for (const row of (data ?? []) as RawRosterRow[]) {
+      const member: RosterMember = {
+        id: row.user_id,
+        name: row.full_name || row.email || "Unnamed",
+        email: row.email,
+        avatarColor: row.avatar_color || "#0284c7",
+        role: row.enrol_role === "instructor" ? "instructor" : "student",
+      };
+      const list = byCode.get(row.subject_code);
+      if (list) list.push(member);
+      else byCode.set(row.subject_code, [member]);
+    }
+  } catch {
+    /* subject_rosters not migrated yet — demo roster */
+  }
+  return byCode;
+}
+
+/**
+ * Everyone enrolled in a course, split by role. Null means there's no live
+ * roster to show (anonymous demo, or nobody enrolled yet).
+ */
+export const getCourseRoster = cache(
+  async (courseId: string): Promise<CourseRoster | null> => {
+    const code = subjects.find((s) => s.id === courseId)?.code;
+    if (!code) return null;
+    const members = (await fetchRosters([code])).get(code);
+    if (!members || members.length === 0) return null;
+    return {
+      instructors: members.filter((m) => m.role === "instructor"),
+      students: members.filter((m) => m.role === "student"),
+    };
+  },
+);
+
+/**
+ * Replace the placeholder instructor on subject-derived courses with whoever
+ * the admin actually assigned to teach them. Courses without an assignment keep
+ * their "To be assigned" placeholder.
+ */
+async function withAssignedInstructors(courses: Course[]): Promise<Course[]> {
+  const rosters = await fetchRosters(courses.map((c) => c.code));
+  if (rosters.size === 0) return courses;
+  return courses.map((course) => {
+    const teaching = (rosters.get(course.code) ?? []).filter(
+      (m) => m.role === "instructor",
+    );
+    return teaching.length
+      ? { ...course, instructor: teaching.map((t) => t.name).join(", ") }
+      : course;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Single data-access surface for the app. Each function tries Supabase first
 // and falls back to bundled seed data, so every page works with or without a
@@ -469,7 +566,9 @@ export const getCourses = cache(async (): Promise<Course[]> => {
           .eq("id", user.id)
           .maybeSingle();
         const role = (profile?.role as Role) ?? "student";
-        if (role === "admin") return subjects.map(subjectToCourse);
+        if (role === "admin") {
+          return withAssignedInstructors(subjects.map(subjectToCourse));
+        }
 
         // Institutional model: courses are the subjects an admin has enrolled
         // this person into (as student, or as instructor if they teach it).
@@ -483,7 +582,9 @@ export const getCourses = cache(async (): Promise<Course[]> => {
             .eq("term", CURRENT_TERM);
           const enrolled = new Set((enr ?? []).map((r) => r.subject_code as string));
           if (enrolled.size > 0) {
-            return subjects.filter((s) => enrolled.has(s.code)).map(subjectToCourse);
+            return withAssignedInstructors(
+              subjects.filter((s) => enrolled.has(s.code)).map(subjectToCourse),
+            );
           }
         } catch {
           /* subject_enrollments not migrated yet — fall through */
@@ -502,7 +603,9 @@ export const getCourses = cache(async (): Promise<Course[]> => {
         for (const r of (regs ?? []) as { registration_items?: { code: string }[] }[]) {
           for (const it of r.registration_items ?? []) codes.add(it.code);
         }
-        return subjects.filter((s) => codes.has(s.code)).map(subjectToCourse);
+        return withAssignedInstructors(
+          subjects.filter((s) => codes.has(s.code)).map(subjectToCourse),
+        );
       }
     } catch {
       /* fall through to demo */

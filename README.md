@@ -98,6 +98,25 @@ instructors, courses, assignments, average progress), a courses table
 (instructor, credits, published status), and a people list. See
 `src/components/admin/AdminConsole.tsx`.
 
+### Class rosters
+
+Once an admin has enrolled people into subjects, the course **People** tab shows
+the **real class** — the assigned teacher first, then classmates — and each
+subject-derived course carries its **assigned instructor's name** instead of the
+"To be assigned" placeholder (visible on the course banner, the admin course
+table, the family view and Mo's course context).
+
+Rosters come from `public.subject_rosters(codes, term)`, a guarded reader added
+in `supabase/migrations/0019_class_rosters.sql`. It's `SECURITY DEFINER` so it
+can join enrolments to profiles, but it returns rows **only for subjects the
+caller is enrolled in** (any role) — or every requested subject for an admin —
+and hands back **contact details only for a subject the caller teaches**.
+Classmates see a name and an avatar, nothing more. Widening the table policies
+instead would have exposed every profile column to every classmate.
+
+Signed-in users never fall back to the demo class: with no one else enrolled yet
+the tab shows just you and says so. Anonymous visitors still get the seed roster.
+
 ### Parent / Family dashboard
 
 Previewing as **Parent** reveals a **Family** entry in the global nav (and a

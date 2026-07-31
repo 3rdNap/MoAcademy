@@ -63,6 +63,31 @@ The app runs as an institution, not a self-service signup:
 - **Guardians** (`parent` role, migration 0017) are created student-driven at
   signup/creation and linked via `guardian_links`; `/family` shows the linked
   child's enrolled courses.
-- Migrations **0017** (guardians) and **0018** (enrolments) must be applied to
-  the live DB for these to work; code degrades gracefully (caught errors →
-  fallback) until then. Service-role key required for the admin routes.
+- **Class rosters** read `public.subject_rosters(codes, term)` (migration 0019),
+  a `SECURITY DEFINER` reader that only returns subjects the caller is enrolled
+  in (admins: all) and only exposes emails for a subject the caller teaches. Use
+  it rather than widening the `profiles` / `subject_enrollments` RLS policies —
+  those are row-level, so a classmate policy would leak every profile column.
+  It also fills each course's real instructor name (`withAssignedInstructors`).
+- Migrations **0017** (guardians), **0018** (enrolments) and **0019** (rosters)
+  must be applied to the live DB for these to work; code degrades gracefully
+  (caught errors → fallback) until then. Service-role key required for the admin
+  routes.
+
+### Verifying SQL migrations
+
+Postgres 16 is available in the sandbox, so migrations can be tested for real
+rather than eyeballed (SQL-language functions have a nasty ambiguity trap
+between `RETURNS TABLE` output names and column names):
+
+```bash
+mkdir -p /var/lib/postgresql/moa && chown postgres:postgres /var/lib/postgresql/moa
+su postgres -c "/usr/lib/postgresql/16/bin/initdb -D /var/lib/postgresql/moa/data -A trust"
+su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/lib/postgresql/moa/data \
+  -o '-k /var/lib/postgresql/moa -p 5433 -c listen_addresses=' -l /var/lib/postgresql/moa/log start"
+```
+
+Stub the Supabase-only pieces first — `auth.uid()`, `private.is_admin()`, roles
+`anon`/`authenticated`, and the tables the migration touches — then apply the
+migration and assert the guard behaviour per caller (student · instructor ·
+admin · anonymous).
