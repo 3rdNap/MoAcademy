@@ -1162,8 +1162,22 @@ export async function getCourseTextbooks(
       .eq("subject_code", code)
       .order("required", { ascending: false })
       .order("title");
-    return (data ?? []).map((r) =>
-      mapCourseTextbook(r as unknown as RawCourseTextbook),
+    // Cover/PDF live in the private textbook-files bucket (migration 0044) —
+    // resolve bare Storage paths to signed URLs; full/data URLs pass through.
+    const sign = async (value?: string) => {
+      if (!value || /^(https?:|data:|blob:)/i.test(value)) return value;
+      const { data: s } = await supabase.storage
+        .from("textbook-files")
+        .createSignedUrl(value, 3600);
+      return s?.signedUrl ?? undefined;
+    };
+    return Promise.all(
+      (data ?? []).map(async (r) => {
+        const t = mapCourseTextbook(r as unknown as RawCourseTextbook);
+        t.coverUrl = await sign(t.coverUrl);
+        t.filePath = await sign(t.filePath);
+        return t;
+      }),
     );
   } catch {
     return [];

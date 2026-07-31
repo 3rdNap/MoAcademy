@@ -5,6 +5,9 @@
 // fall back to the anonymous empty state.
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { resolveFileUrl } from "@/lib/supabase/signed";
+
+const BUCKET = "textbook-files";
 
 export interface Textbook {
   id: string;
@@ -81,7 +84,9 @@ export async function getSignedInUserId(): Promise<string | null> {
   }
 }
 
-/** All textbooks (RLS: any signed-in user reads), by subject then title — or null. */
+/** The textbooks the signed-in user may read (scoped to their enrolments by
+ *  RLS — migration 0043), by subject then title. Cover/PDF paths are resolved
+ *  to signed URLs (bucket is private — migration 0044). Null on any failure. */
 export async function fetchTextbooks(): Promise<Textbook[] | null> {
   const supabase = createSupabaseBrowserClient();
   if (!supabase) return null;
@@ -92,7 +97,14 @@ export async function fetchTextbooks(): Promise<Textbook[] | null> {
       .order("subject_code", { ascending: true })
       .order("title", { ascending: true });
     if (error || !data) return null;
-    return (data as unknown as TextbookRow[]).map(mapRow);
+    return Promise.all(
+      (data as unknown as TextbookRow[]).map(async (r) => {
+        const t = mapRow(r);
+        t.coverUrl = await resolveFileUrl(BUCKET, t.coverUrl);
+        t.filePath = await resolveFileUrl(BUCKET, t.filePath);
+        return t;
+      }),
+    );
   } catch {
     return null;
   }
@@ -150,13 +162,17 @@ export async function removeTextbook(id: string): Promise<boolean> {
 }
 
 /**
- * Upload a cover image or PDF to the public textbook-files bucket and return
- * its public URL. Files land in the uploader's own folder (RLS requires it).
- * Null when signed out / unconfigured / the upload fails.
+ * Upload a cover image or PDF to the private textbook-files bucket and return
+ * its object *path* (downloads go through signed URLs — migration 0044). The
+ * subject code is baked into the path (`<uid>/<code>/<kind>/<uuid>-name`) so
+ * the storage read policy can scope access by enrolment. Files land in the
+ * uploader's own folder (RLS requires it). Null when signed out /
+ * unconfigured / the upload fails.
  */
 export async function uploadTextbookFile(
   file: File,
   kind: "cover" | "pdf",
+  subjectCode: string,
 ): Promise<string | null> {
   const supabase = createSupabaseBrowserClient();
   if (!supabase) return null;
@@ -166,18 +182,16 @@ export async function uploadTextbookFile(
     } = await supabase.auth.getUser();
     if (!user) return null;
 
+    const code = (subjectCode || "_").replace(/[^A-Za-z0-9_-]/g, "_");
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = `${user.id}/${kind}/${crypto.randomUUID()}-${safeName}`;
+    const path = `${user.id}/${code}/${kind}/${crypto.randomUUID()}-${safeName}`;
 
     const { error } = await supabase.storage
-      .from("textbook-files")
+      .from(BUCKET)
       .upload(path, file, { upsert: false, contentType: file.type });
     if (error) return null;
 
-    const { data } = supabase.storage
-      .from("textbook-files")
-      .getPublicUrl(path);
-    return data.publicUrl ?? null;
+    return path;
   } catch {
     return null;
   }

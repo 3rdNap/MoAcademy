@@ -22,6 +22,7 @@ import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import { uploadStudyFile } from "@/lib/supabase/storage";
+import { resolveFileUrl } from "@/lib/supabase/signed";
 import { fetchRemoteAllocatedSubjects } from "@/lib/billing/registration-db";
 import {
   addRemoteGuide,
@@ -149,7 +150,7 @@ export function StudyGuidesBoard() {
   async function onPdf(file?: File) {
     if (!file) return;
     setNote("Uploading…");
-    const url = await uploadStudyFile(file, "pdf");
+    const url = await uploadStudyFile(file, "pdf", draft.subject);
     if (url) {
       setDraft((d) => ({ ...d, pdfUrl: url, pdfFileName: file.name, pdfData: undefined }));
       setNote(`Uploaded ${file.name}`);
@@ -168,7 +169,7 @@ export function StudyGuidesBoard() {
 
   async function onThumb(file?: File) {
     if (!file) return;
-    const url = await uploadStudyFile(file, "thumb");
+    const url = await uploadStudyFile(file, "thumb", draft.subject);
     if (url) {
       setDraft((d) => ({ ...d, thumbUrl: url, thumbData: undefined }));
       return;
@@ -202,9 +203,9 @@ export function StudyGuidesBoard() {
     if (remote !== null && signedIn) {
       if (isRemoteGuide) {
         if (await updateRemoteGuide(draft.id!, payload)) {
-          setRemote((prev) =>
-            (prev ?? []).map((g) => (g.id === draft.id ? { ...g, ...payload } : g)),
-          );
+          // Re-fetch so stored paths come back as fresh signed URLs.
+          const refreshed = await fetchRemoteGuides();
+          if (refreshed) setRemote(refreshed);
           setOpen(false);
           return;
         }
@@ -237,7 +238,17 @@ export function StudyGuidesBoard() {
     remove(id);
   }
 
-  const draftThumb = draft.thumbData || draft.thumbUrl;
+  // The thumbnail value may be a bare Storage path (private bucket) — resolve
+  // it to a signed URL for the modal preview. data:/http values pass through.
+  const [draftThumb, setDraftThumb] = useState<string | undefined>();
+  useEffect(() => {
+    let alive = true;
+    const v = draft.thumbData || draft.thumbUrl;
+    resolveFileUrl("study-guides", v).then((u) => alive && setDraftThumb(u));
+    return () => {
+      alive = false;
+    };
+  }, [draft.thumbData, draft.thumbUrl]);
 
   return (
     <>

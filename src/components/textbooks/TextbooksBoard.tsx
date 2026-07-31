@@ -18,6 +18,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach, isAdmin } from "@/lib/role";
+import { resolveFileUrl } from "@/lib/supabase/signed";
 import { fetchRemoteAllocatedSubjects } from "@/lib/billing/registration-db";
 import { subjects } from "@/lib/billing/subjects";
 import {
@@ -91,6 +92,19 @@ export function TextbooksBoard() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [note, setNote] = useState("");
 
+  // The cover value may be a bare Storage path (private bucket) — resolve it
+  // to a signed URL for the modal preview. data:/http values pass through.
+  const [coverPreview, setCoverPreview] = useState<string | undefined>();
+  useEffect(() => {
+    let alive = true;
+    resolveFileUrl("textbook-files", draft.coverUrl).then(
+      (u) => alive && setCoverPreview(u),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [draft.coverUrl]);
+
   // Admins see every textbook; students and instructors see only those for
   // the subjects allocated to them. When scoping is unavailable we leave the
   // (empty for signed-out) list unfiltered.
@@ -141,7 +155,7 @@ export function TextbooksBoard() {
   async function onCover(file?: File) {
     if (!file) return;
     setNote("Uploading cover…");
-    const url = await uploadTextbookFile(file, "cover");
+    const url = await uploadTextbookFile(file, "cover", draft.subjectCode);
     if (url) {
       setDraft((d) => ({ ...d, coverUrl: url }));
       setNote(`Uploaded ${file.name}`);
@@ -153,7 +167,7 @@ export function TextbooksBoard() {
   async function onPdf(file?: File) {
     if (!file) return;
     setNote("Uploading PDF…");
-    const url = await uploadTextbookFile(file, "pdf");
+    const url = await uploadTextbookFile(file, "pdf", draft.subjectCode);
     if (url) {
       setDraft((d) => ({ ...d, filePath: url }));
       setNote(`Uploaded ${file.name}`);
@@ -178,15 +192,12 @@ export function TextbooksBoard() {
     };
 
     if (draft.id) {
-      const id = draft.id;
-      const prev = books;
-      setBooks((list) =>
-        (list ?? []).map((t) => (t.id === id ? { ...t, ...payload } : t)),
-      );
-      if (await updateTextbook(id, payload)) {
+      if (await updateTextbook(draft.id, payload)) {
+        // Re-fetch so stored cover/PDF paths come back as fresh signed URLs.
+        const refreshed = await fetchTextbooks();
+        if (refreshed) setBooks(refreshed);
         setOpen(false);
       } else {
-        setBooks(prev);
         setNote(
           "Couldn't save — you can only manage textbooks for subjects you teach.",
         );
@@ -196,7 +207,8 @@ export function TextbooksBoard() {
 
     const created = await addTextbook(payload);
     if (created) {
-      setBooks((list) => [created, ...(list ?? [])]);
+      const refreshed = await fetchTextbooks();
+      setBooks(refreshed ?? [created, ...(books ?? [])]);
       setOpen(false);
     } else {
       setNote(
@@ -384,15 +396,15 @@ export function TextbooksBoard() {
             <div
               className="flex h-24 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg"
               style={
-                draft.coverUrl
+                coverPreview
                   ? undefined
                   : { background: gradientFor(draft.title || "book") }
               }
             >
-              {draft.coverUrl ? (
+              {coverPreview ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={draft.coverUrl}
+                  src={coverPreview}
                   alt=""
                   className="h-full w-full object-cover"
                 />
