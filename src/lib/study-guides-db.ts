@@ -6,7 +6,10 @@
 // the browser-local library.
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { resolveFileUrl } from "@/lib/supabase/signed";
 import type { StudyGuide } from "@/lib/study-guides";
+
+const BUCKET = "study-guides";
 
 interface GuideRow {
   id: string;
@@ -18,9 +21,13 @@ interface GuideRow {
   created_at: string;
 }
 
-function mapRow(r: GuideRow): StudyGuide {
-  const pdf = r.pdf_path ?? undefined;
-  const thumb = r.thumb_path ?? undefined;
+/** Build a StudyGuide from a row, resolving stored file values (bare Storage
+ *  paths → signed URLs on the now-private bucket; data:/http values pass
+ *  through). data: values keep the pdfData/thumbData slot so the download
+ *  attribute still works. */
+async function mapRow(r: GuideRow): Promise<StudyGuide> {
+  const pdf = await resolveFileUrl(BUCKET, r.pdf_path);
+  const thumb = await resolveFileUrl(BUCKET, r.thumb_path);
   return {
     id: r.id,
     title: r.title,
@@ -61,7 +68,7 @@ export async function fetchRemoteGuides(): Promise<StudyGuide[] | null> {
       .select("*")
       .order("created_at", { ascending: false });
     if (error || !data) return null;
-    return (data as unknown as GuideRow[]).map(mapRow);
+    return Promise.all((data as unknown as GuideRow[]).map(mapRow));
   } catch {
     return null;
   }
@@ -98,7 +105,7 @@ export async function addRemoteGuide(
       .select()
       .single();
     if (error || !data) return null;
-    return mapRow(data as unknown as GuideRow);
+    return await mapRow(data as unknown as GuideRow);
   } catch {
     return null;
   }
