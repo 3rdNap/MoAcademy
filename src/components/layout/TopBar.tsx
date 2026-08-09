@@ -7,6 +7,7 @@ import { GlobalSearch } from "./GlobalSearch";
 import { ThemeToggle } from "./ThemeToggle";
 import { RoleSwitcher } from "@/components/role/RoleSwitcher";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { getBrand } from "@/lib/brand";
 
 /**
  * Brightspace-style top bar: brand wordmark, course "waffle" switcher,
@@ -21,6 +22,8 @@ export function TopBar({
   courses: Course[];
   authed?: boolean;
 }) {
+  const brand = getBrand();
+
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-black/5 bg-surface/90 px-3 backdrop-blur sm:gap-3 sm:px-4 md:pl-6 print:hidden">
       {/* Full logo lockup: mark | ACADEMY / SMART LEARNING. Slightly compact
@@ -29,10 +32,10 @@ export function TopBar({
       <Link
         href="/dashboard"
         className="focus-ring flex shrink-0 items-center gap-2 sm:gap-2.5"
-        aria-label="MoAcademy home"
+        aria-label={`${brand.name} home`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/mo-mark.png" alt="mo" className="h-6 w-auto sm:h-7" />
+        <img src={brand.mark} alt={brand.assistant.toLowerCase()} className="h-6 w-auto sm:h-7" />
         <span aria-hidden className="h-8 w-px bg-ink/70 sm:h-9" />
         {/* ACADEMY dominates (~4:1 vs the slogan), set in Poppins — the
             logo's typeface */}

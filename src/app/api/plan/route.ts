@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { DEFAULT_ASSISTANT_MODEL } from "@/lib/assistant";
+import { getBrand } from "@/lib/brand";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -70,8 +71,9 @@ export async function POST(req: Request) {
     "one lighter day. Encourage, don't overload.",
   );
 
+  const brand = getBrand();
   const system =
-    "You are Mo, MoAcademy's study coach. Respond with ONLY a JSON array — " +
+    `You are ${brand.assistant}, ${brand.name}'s study coach. Respond with ONLY a JSON array — ` +
     "no prose, no code fences. Exactly 7 elements, one per day starting " +
     'today: {"day": weekday name, "focus": short theme, "tasks": [2-3 short, ' +
     "concrete tasks]}. Plain text inside strings, no Markdown.";
@@ -107,7 +109,7 @@ export async function POST(req: Request) {
     const days = validate(raw);
     if (!days) {
       return NextResponse.json(
-        { error: "Mo couldn't build the plan — try again in a moment." },
+        { error: `${getBrand().assistant} couldn't build the plan — try again in a moment.` },
         { status: 502 },
       );
     }

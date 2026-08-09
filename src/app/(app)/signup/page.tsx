@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
+import { getBrand } from "@/lib/brand";
 
 export const metadata = { title: "Accounts" };
 
 /**
- * Public self-signup is closed: MoAcademy is an institution, so accounts are
+ * Public self-signup is closed: the academy is an institution, so accounts are
  * issued by an administrator (name@moacademy.com + a temporary password), not
  * created by visitors. This page explains that and points to sign-in.
  */
 export default function SignupPage() {
+  const brand = getBrand();
+
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center">
       <div className="card p-6 text-center">
@@ -19,8 +22,8 @@ export default function SignupPage() {
           Accounts are issued by your institution
         </h1>
         <p className="mt-2 text-sm text-ink-muted">
-          MoAcademy doesn&apos;t use public sign-up. Your administrator creates
-          your account and gives you a MoAcademy login
+          {brand.name} doesn&apos;t use public sign-up. Your administrator creates
+          your account and gives you a {brand.name} login
           (<span className="font-medium">name@moacademy.com</span>) and a
           temporary password. You&apos;ll set your own password the first time
           you sign in.

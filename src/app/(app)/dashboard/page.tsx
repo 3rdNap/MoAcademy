@@ -36,6 +36,8 @@ import {
 } from "@/lib/data";
 import { formatMoney } from "@/lib/billing/pricing";
 import { formatDate, relativeTime } from "@/lib/utils";
+import { getBrand } from "@/lib/brand";
+import { WomensMonthBanner } from "@/components/brand/WomensMonthBanner";
 
 export const metadata = { title: "Dashboard" };
 
@@ -47,6 +49,7 @@ function greeting(now = new Date()) {
 }
 
 export default async function DashboardPage() {
+  const brand = getBrand();
   const auth = await getAuthState();
 
   // Admins get an institution-focused home instead of the student layout.
@@ -77,13 +80,14 @@ export default async function DashboardPage() {
 
   return (
     <>
+      <WomensMonthBanner />
       <RolePreviewBanner />
       <GuardianProvisioner />
       <PageHeader
         title={`${greeting()}, ${user.name.split(" ")[0]}`}
         subtitle={
           courses.length === 0
-            ? `Welcome to MoAcademy · ${formatDate(new Date().toISOString())}`
+            ? `Welcome to ${brand.name} · ${formatDate(new Date().toISOString())}`
             : `You're enrolled in ${courses.length} course${
                 courses.length === 1 ? "" : "s"
               } this term · ${formatDate(new Date().toISOString())}`

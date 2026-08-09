@@ -6,6 +6,7 @@ import { Check, Copy, UserPlus } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Label, Select } from "@/components/ui/form";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 interface CreatedAccount {
   name: string;
@@ -21,6 +22,7 @@ interface CreatedAccount {
  * admin to hand over. Disabled when provisioning isn't configured.
  */
 export function AddPersonButton({ enabled }: { enabled: boolean }) {
+  const brand = useBrand();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -89,7 +91,7 @@ export function AddPersonButton({ enabled }: { enabled: boolean }) {
     if (!result) return;
     try {
       await navigator.clipboard.writeText(
-        `MoAcademy login for ${result.name}\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}`,
+        `${brand.name} login for ${result.name}\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}`,
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -116,7 +118,7 @@ export function AddPersonButton({ enabled }: { enabled: boolean }) {
         description={
           result
             ? "Share these details with them. They set their own password on first sign-in."
-            : "Issue a MoAcademy login. The system generates the email and a temporary password."
+            : `Issue a ${brand.name} login. The system generates the email and a temporary password.`
         }
       >
         {result ? (

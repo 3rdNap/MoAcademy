@@ -8,6 +8,7 @@ import { globalNav, type GlobalNavItem } from "@/lib/nav";
 import { useRole } from "@/components/role/RoleProvider";
 import { isAdmin, isParent } from "@/lib/role";
 import { cn } from "@/lib/utils";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 /**
  * Canvas-style vertical global navigation rail (desktop). Collapses to a
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
  */
 export function GlobalNav() {
   const pathname = usePathname();
+  const brand = useBrand();
   const { role, hydrated } = useRole();
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -50,10 +52,10 @@ export function GlobalNav() {
         <Link
           href="/dashboard"
           className="focus-ring mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-white p-1.5"
-          aria-label="MoAcademy home"
+          aria-label={`${brand.name} home`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/mo-mark.png" alt="" className="h-full w-full object-contain" />
+          <img src={brand.mark} alt="" className="h-full w-full object-contain" />
         </Link>
         <ul className="flex flex-1 flex-col gap-1">
           {items.map((item) => {

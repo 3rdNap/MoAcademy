@@ -21,6 +21,7 @@ import {
 import * as seed from "@/lib/data/seed";
 import { itemIcon, itemLabel } from "@/lib/itemMeta";
 import { cn } from "@/lib/utils";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 interface Entry {
   id: string;
@@ -40,12 +41,17 @@ const pages: Entry[] = [
   { id: "p-grades", kind: "Page", title: "Grades", subtitle: "Term standing", href: "/grades", icon: GraduationCap },
   { id: "p-billing", kind: "Page", title: "Billing", subtitle: "Registration", href: "/billing", icon: CreditCard },
   { id: "p-guides", kind: "Page", title: "Study Guides", subtitle: "PDF guide library", href: "/study-guides", icon: Library },
-  { id: "p-assistant", kind: "Page", title: "Assistant", subtitle: "Ask Mo, your AI tutor", href: "/assistant", icon: Sparkles },
-  { id: "p-practice", kind: "Page", title: "Practice", subtitle: "Mo-made quizzes with instant marking", href: "/practice", icon: ListChecks },
+];
+
+/** The two entries that name the AI tutor, who is Wo during Women's Month. */
+const assistantPages = (assistant: string): Entry[] => [
+  { id: "p-assistant", kind: "Page", title: "Assistant", subtitle: `Ask ${assistant}, your AI tutor`, href: "/assistant", icon: Sparkles },
+  { id: "p-practice", kind: "Page", title: "Practice", subtitle: `${assistant}-made quizzes with instant marking`, href: "/practice", icon: ListChecks },
 ];
 
 export function GlobalSearch() {
   const router = useRouter();
+  const brand = useBrand();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -83,8 +89,14 @@ export function GlobalSearch() {
       })),
     );
 
-    return [...pages, ...courseEntries, ...assignmentEntries, ...itemEntries];
-  }, []);
+    return [
+      ...pages,
+      ...assistantPages(brand.assistant),
+      ...courseEntries,
+      ...assignmentEntries,
+      ...itemEntries,
+    ];
+  }, [brand.assistant]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();

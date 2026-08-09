@@ -11,7 +11,7 @@ import {
   ListChecks,
   type LucideIcon,
 } from "lucide-react";
-import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
+import { BrandMarkIcon } from "@/components/brand/BrandMark";
 
 /** Lucide icons and the logo-mark icon both fit this shape. */
 export type NavIcon =
@@ -32,7 +32,7 @@ export const globalNav: GlobalNavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Home, onMobileBar: true },
   { label: "Courses", href: "/courses", icon: LayoutGrid, onMobileBar: true },
   { label: "Study Guides", href: "/study-guides", icon: Library },
-  { label: "Assistant", href: "/assistant", icon: MoMarkIcon, onMobileBar: true },
+  { label: "Assistant", href: "/assistant", icon: BrandMarkIcon, onMobileBar: true },
   { label: "Practice", href: "/practice", icon: ListChecks },
   { label: "Roadmap", href: "/roadmap", icon: Compass, onMobileBar: true },
   { label: "Calendar", href: "/calendar", icon: Calendar, onMobileBar: true },

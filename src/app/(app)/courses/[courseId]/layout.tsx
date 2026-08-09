@@ -2,10 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { CourseNav } from "@/components/layout/CourseNav";
-import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
+import { BrandMarkIcon } from "@/components/brand/BrandMark";
 import { CourseInstructorBar } from "@/components/role/CourseInstructorBar";
 import { Badge } from "@/components/ui/Badge";
 import { getCourse } from "@/lib/data";
+import { getBrand } from "@/lib/brand";
 
 export default async function CourseLayout({
   children,
@@ -14,6 +15,7 @@ export default async function CourseLayout({
   children: React.ReactNode;
   params: Promise<{ courseId: string }>;
 }) {
+  const brand = getBrand();
   const { courseId } = await params;
   const course = await getCourse(courseId);
   if (!course) notFound();
@@ -36,10 +38,10 @@ export default async function CourseLayout({
           <Link
             href={`/assistant?course=${encodeURIComponent(`${course.code} ${course.name}`)}`}
             className="focus-ring inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:bg-white"
-            title="Ask Mo about this course"
+            title={`Ask ${brand.assistant} about this course`}
           >
-            <MoMarkIcon className="h-3.5 w-auto" />
-            Ask Mo
+            <BrandMarkIcon className="h-3.5 w-auto" />
+            Ask {brand.assistant}
           </Link>
         </div>
         <div className="flex flex-wrap items-center gap-2">

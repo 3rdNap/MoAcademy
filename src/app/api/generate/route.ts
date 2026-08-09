@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { DEFAULT_ASSISTANT_MODEL } from "@/lib/assistant";
+import { getBrand } from "@/lib/brand";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          "Drafting with Mo isn't configured yet — add an ANTHROPIC_API_KEY to enable it.",
+          `Drafting with ${getBrand().assistant} isn't configured yet — add an ANTHROPIC_API_KEY to enable it.`,
       },
       { status: 503 },
     );
@@ -44,13 +45,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing title." }, { status: 400 });
   }
 
+  const brand = getBrand();
   const system =
     body.kind === "family-summary"
-      ? "You are Mo, MoAcademy's assistant, writing for a parent about their " +
+      ? `You are ${brand.assistant}, ${brand.name}'s assistant, writing for a parent about their ` +
         "child's schoolwork. Warm, honest and concrete — no jargon, no " +
         "Markdown, no headings. 3 to 4 sentences, ending with one practical " +
         "way the parent can help this week."
-      : "You draft course content for MoAcademy, an online school. Write clear, " +
+      : `You draft course content for ${brand.name}, an online school. Write clear, ` +
         "encouraging text students can act on. Plain text only — no Markdown " +
         "headings or asterisks. Keep it under 120 words.";
 
@@ -95,7 +97,7 @@ export async function POST(req: Request) {
       .trim();
     if (!text) {
       return NextResponse.json(
-        { error: "Mo couldn't draft that — try a more specific title." },
+        { error: `${getBrand().assistant} couldn't draft that — try a more specific title.` },
         { status: 502 },
       );
     }

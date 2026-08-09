@@ -236,6 +236,58 @@ inline alongside coursework. Personal events persist in the browser
 (`moacademy.calendar.events`). Lives in
 `src/components/calendar/CalendarBoard.tsx`.
 
+## Women's Month — WoAcademy every August
+
+August is **Women's Month** in South Africa (National Women's Day falls on the
+9th, marking the 1956 women's march to the Union Buildings). For that month the
+academy runs as **WoAcademy**: the lilac "wo" mark, a lilac palette, and **Wo**
+— the same she/her AI tutor — in place of Mo. On 1 September it returns to the
+year-round blue MoAcademy on its own, and comes back every August after.
+
+One date rule decides it (`src/lib/brand.ts`), and everything reads from the
+`Brand` it resolves — wordmark, tutor name, logo mark, app icons, social card,
+`theme_color`, and the AI system prompts — so the switch is a date check rather
+than a scattered set of string edits:
+
+```ts
+getBrand()  // { name: "WoAcademy", assistant: "Wo", mark: "/wo-mark.png", … }
+```
+
+- **The changeover is South African.** SAST is UTC+2 year-round (no DST since
+  1944), so a fixed offset is exact and the switch lands at midnight *in
+  Johannesburg*, not UTC. `npm run test:brand` checks both boundaries.
+- **Colour** is a CSS-variable swap: the root layout puts a `womens-month`
+  class on `<html>` and every `brand-*` utility re-tints at once. The mid tones
+  are pitched for contrast, so `brand-600` reads at **4.92:1** on white — the
+  blue it replaces manages 4.10:1.
+- **Freshness.** The root layout sets `revalidate = 3600`, because the brand is
+  a function of the date and statically generated pages would otherwise serve
+  whichever identity was current at build time.
+- **No hydration split.** The brand is resolved once on the server and shared
+  through `BrandProvider`; client components read `useBrand()` rather than
+  re-deciding, so a page rendered just before the changeover can't hydrate into
+  the other identity.
+- **Preview out of season** with `NEXT_PUBLIC_BRAND=woacademy` (or
+  `moacademy`), which pins the identity regardless of the date.
+
+The `name@moacademy.com` login domain is an account identity, not branding, and
+is deliberately left alone — as are per-person avatar colours and per-course
+card colours.
+
+### Brand assets
+
+Seasonal marks live in `public/wo-*.png`, generated from the supplied artwork in
+`brand/wo-academy-logo.png`:
+
+```bash
+npm run build          # once, so next/font caches Poppins
+npm run brand:assets   # rebuilds wo-mark, wo-lockup, wo-icon-*, wo-og-image
+```
+
+The "wo" letterform is lifted from the artwork itself rather than reusing the
+year-round "m" flipped — close, but wrong: the real `w` has wider, tapered inner
+slits. Everything else is redrawn in **Poppins**, the lockup's actual typeface.
+
 ## Light / dark theme
 
 A **light/dark theme toggle** (sun/moon in the top bar) switches the whole app.

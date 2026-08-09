@@ -10,6 +10,7 @@ import { seedGuides, type StudyGuide } from "@/lib/study-guides";
 import type { Registration } from "@/lib/billing/registration";
 import type { ChatMessage } from "@/lib/assistant";
 import { renderMarkdown } from "./markdown";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 const SUGGESTIONS = [
   "Explain a concept I'm stuck on",
@@ -34,6 +35,7 @@ const MAX_STORED = 40;
 
 export function AssistantChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const brand = useBrand();
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [webSearch, setWebSearch] = useState(true);
@@ -181,7 +183,7 @@ export function AssistantChat() {
     <div className="flex h-[calc(100vh-8rem)] flex-col">
       <PageHeader
         title="Study Assistant"
-        subtitle="Ask Mo anything — grounded in your courses and study guides, with the whole web when you need it."
+        subtitle={`Ask ${brand.assistant} anything — grounded in your courses and study guides, with the whole web when you need it.`}
         action={
           messages.length > 0 ? (
             <Button
@@ -206,7 +208,7 @@ export function AssistantChat() {
           <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
             <MoMark className="h-14 w-14 rounded-2xl p-2" />
             <div>
-              <p className="text-lg font-semibold text-ink">Hi, I&apos;m Mo 👋</p>
+              <p className="text-lg font-semibold text-ink">Hi, I&apos;m {brand.assistant} 👋</p>
               <p className="mx-auto mt-1 max-w-md text-sm text-ink-muted">
                 Your personal tutor. I know your courses and study guides, and I
                 can explain concepts, quiz you, and help you plan — I&apos;ll
@@ -279,7 +281,7 @@ export function AssistantChat() {
             }
           }}
           rows={1}
-          placeholder="Ask Mo about your studies…"
+          placeholder={`Ask ${brand.assistant} about your studies…`}
           className="focus-ring max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-black/10 bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint dark:border-white/10"
         />
         {busy ? (
@@ -302,7 +304,7 @@ export function AssistantChat() {
         )}
       </form>
       <p className="mt-1.5 text-center text-[11px] text-ink-faint">
-        Mo is powered by Anthropic&apos;s Claude and can make mistakes —
+        {brand.assistant} is powered by Anthropic&apos;s Claude and can make mistakes —
         double-check important facts.
         {webSearch ? " Web search is on." : " Web search is off."}
       </p>
@@ -345,15 +347,16 @@ function Dot() {
   );
 }
 
-/** Mo's avatar — the blue "mo" mark from the MoAcademy logo. */
+/** The tutor's avatar — the logo mark, lilac "wo" during Women's Month. */
 function MoMark({ className }: { className?: string }) {
+  const brand = useBrand();
   return (
     <div
       aria-hidden
       className={`flex items-center justify-center bg-white p-1 ring-1 ring-black/10 dark:ring-white/10 ${className ?? ""}`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/mo-mark.png" alt="" className="h-full w-full object-contain" />
+      <img src={brand.mark} alt="" className="h-full w-full object-contain" />
     </div>
   );
 }

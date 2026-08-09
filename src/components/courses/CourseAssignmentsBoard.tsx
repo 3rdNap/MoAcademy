@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
-import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
+import { BrandMarkIcon } from "@/components/brand/BrandMark";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
@@ -21,6 +21,7 @@ import { getSignedInUserId } from "@/lib/study-guides-db";
 import { itemIcon } from "@/lib/itemMeta";
 import { formatDateTime, relativeTime } from "@/lib/utils";
 import type { Assignment, Course, SubmissionStatus } from "@/lib/types";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 interface Submission {
   id: string; // assignment id
@@ -66,6 +67,7 @@ export function CourseAssignmentsBoard({
   course: Course;
   seed: Assignment[];
 }) {
+  const brand = useBrand();
   const { role, hydrated } = useRole();
   const teaching = hydrated && canTeach(role);
 
@@ -122,12 +124,12 @@ export function CourseAssignmentsBoard({
         | { text?: string; error?: string }
         | null;
       if (!res.ok || !data?.text) {
-        setAiNote(data?.error ?? "Mo couldn't draft that right now.");
+        setAiNote(data?.error ?? `${brand.assistant} couldn't draft that right now.`);
         return;
       }
       setDraft((d) => ({ ...d, description: data.text! }));
     } catch {
-      setAiNote("Mo couldn't draft that right now.");
+      setAiNote(`${brand.assistant} couldn't draft that right now.`);
     } finally {
       setAiBusy(false);
     }
@@ -427,13 +429,13 @@ export function CourseAssignmentsBoard({
                 disabled={!draft.title.trim() || aiBusy}
                 title={
                   draft.title.trim()
-                    ? "Let Mo draft the description from the title"
+                    ? `Let ${brand.assistant} draft the description from the title`
                     : "Give the assignment a title first"
                 }
                 className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300"
               >
-                <MoMarkIcon className="h-3 w-auto" />
-                {aiBusy ? "Drafting…" : "Draft with Mo"}
+                <BrandMarkIcon className="h-3 w-auto" />
+                {aiBusy ? "Drafting…" : `Draft with ${brand.assistant}`}
               </button>
             </div>
             {aiNote && <p className="mb-1 text-xs text-rose-600">{aiNote}</p>}

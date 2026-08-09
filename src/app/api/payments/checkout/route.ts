@@ -7,6 +7,7 @@ import {
   isPayFastConfigured,
   isSandbox,
 } from "@/lib/payments/payfast";
+import { getBrand } from "@/lib/brand";
 
 export const runtime = "nodejs";
 
@@ -122,7 +123,7 @@ export async function POST(req: Request) {
   const { url, fields } = buildPaymentFields({
     mPaymentId: reg.id as string,
     amount: q.total,
-    itemName: `MoAcademy registration ${invoiceNo} (${chosen.length} subject${chosen.length === 1 ? "" : "s"})`,
+    itemName: `${getBrand().name} registration ${invoiceNo} (${chosen.length} subject${chosen.length === 1 ? "" : "s"})`,
     buyerName: name,
     buyerEmail: email,
     siteUrl,

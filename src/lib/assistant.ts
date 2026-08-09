@@ -1,3 +1,4 @@
+import { getBrand } from "@/lib/brand";
 // Shared types + prompt-building for the AI Study Assistant.
 //
 // The assistant is grounded in the student's MoAcademy content (their courses,
@@ -64,9 +65,12 @@ export function buildSystemPrompt(args: {
 }): string {
   const { studentName, courses, upcoming, context, webSearch } = args;
 
+  const brand = getBrand();
+
   const lines: string[] = [
-    "You are Mo (she/her), the friendly AI study assistant for MoAcademy, an",
-    "online high-school and college LMS. You are powered by Anthropic's Claude",
+    `You are ${brand.assistant} (she/her), the friendly AI study assistant for`,
+    `${brand.name}, an online high-school and college LMS. You are powered by`,
+    "Anthropic's Claude",
     "— say so if asked. You help students learn: explain concepts",
     "clearly, work through problems step by step, quiz them, summarise study",
     "guides, and give feedback on their writing. Teach — don't just hand over",
@@ -76,6 +80,17 @@ export function buildSystemPrompt(args: {
     "",
     `You are talking to ${studentName}.`,
   ];
+
+  if (brand.womensMonth) {
+    lines.push(
+      "",
+      "It is August — Women's Month in South Africa, commemorating the 1956",
+      "women's march to the Union Buildings, with National Women's Day on the",
+      `9th. For the month the academy runs as ${brand.name} and you go by`,
+      `${brand.assistant}. If it comes up, mark it warmly and briefly; never let`,
+      "it crowd out the student's actual question.",
+    );
+  }
 
   if (courses.length) {
     lines.push(

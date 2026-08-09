@@ -6,6 +6,7 @@ import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/form";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 /**
  * First-login password reset. Institution-issued accounts land here (via the
@@ -15,6 +16,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
  */
 export function SetPasswordCard() {
   const router = useRouter();
+  const brand = useBrand();
   const [email, setEmail] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -67,7 +69,7 @@ export function SetPasswordCard() {
           </span>
           <h1 className="mt-3 text-xl font-bold text-ink">Set your password</h1>
           <p className="text-sm text-ink-muted">
-            Welcome to MoAcademy. Choose a password to replace the temporary one
+            Welcome to {brand.name}. Choose a password to replace the temporary one
             you were given.
           </p>
           {email && (

@@ -2,12 +2,14 @@
   "name": "moacademy",
   "version": "0.1.0",
   "private": true,
-  "description": "MoAcademy — a modern LMS inspired by Brightspace and Canvas.",
+  "description": "MoAcademy \u2014 a modern LMS inspired by Brightspace and Canvas.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:brand": "node --experimental-strip-types scripts/brand.test.mts",
+    "brand:assets": "python3 scripts/generate-brand-assets.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",

@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
+import { BrandMarkIcon } from "@/components/brand/BrandMark";
 import { children as demoChildren } from "@/lib/family";
 import {
   clampPct,
@@ -30,6 +30,7 @@ import type {
   Assignment,
   Course,
 } from "@/lib/types";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 export function FamilyDashboard({
   courses,
@@ -42,6 +43,7 @@ export function FamilyDashboard({
   announcements: Announcement[];
   activity: ActivityEvent[];
 }) {
+  const brand = useBrand();
   const [childId, setChildId] = useState(demoChildren[0].id);
   const child = demoChildren.find((c) => c.id === childId) ?? demoChildren[0];
 
@@ -132,7 +134,7 @@ export function FamilyDashboard({
         | { text?: string; error?: string }
         | null;
       if (!res.ok || !data?.text) {
-        setSumError(data?.error ?? "Mo couldn't write the summary right now.");
+        setSumError(data?.error ?? `${brand.assistant} couldn't write the summary right now.`);
         return;
       }
       const generatedAt = new Date().toISOString();
@@ -147,7 +149,7 @@ export function FamilyDashboard({
         /* in-memory only */
       }
     } catch {
-      setSumError("Mo couldn't write the summary right now.");
+      setSumError(`${brand.assistant} couldn't write the summary right now.`);
     } finally {
       setSumBusy(false);
     }
@@ -223,9 +225,9 @@ export function FamilyDashboard({
       <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50/60 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <MoMarkIcon className="h-5 w-auto" />
+            <BrandMarkIcon className="h-5 w-auto" />
             <h2 className="text-sm font-semibold text-ink">
-              Mo&apos;s summary for you
+              {brand.assistant}&apos;s summary for you
             </h2>
           </div>
           {summary ? (
@@ -253,7 +255,7 @@ export function FamilyDashboard({
         )}
         {!summary && !sumError && (
           <p className="mt-2 text-sm text-ink-muted">
-            Mo can turn {child.name.split(" ")[0]}&apos;s grades and deadlines
+            {brand.assistant} can turn {child.name.split(" ")[0]}&apos;s grades and deadlines
             into a short, plain-language update for you.
           </p>
         )}

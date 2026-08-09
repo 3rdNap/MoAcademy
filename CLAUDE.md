@@ -32,6 +32,28 @@ Client islands gated on `localStorage`/role (roadmap, billing, instructor
 tools, gradebook) only render their content after hydration, so they won't
 appear in the static prerender — that's expected, not a bug.
 
+## Seasonal branding (WoAcademy in August)
+
+The app is **MoAcademy** year-round and **WoAcademy** every August, for South
+Africa's Women's Month. Rules when touching anything brand-shaped:
+
+- Never hard-code `"MoAcademy"`, `"Mo"`, or `/mo-mark.png` in UI or prompts.
+  Read `getBrand()` (server) or `useBrand()` (client, from `BrandProvider`).
+  Client components must **not** call `getBrand()` themselves — the server
+  resolves it once and shares it, which is what keeps hydration consistent
+  across the changeover.
+- Brand colours are CSS variables (`--brand-50…950`) swapped by the
+  `womens-month` class on `<html>`; `brand-*` Tailwind utilities follow
+  automatically. Don't reintroduce fixed hex for brand colours.
+- The root layout's `revalidate = 3600` is what makes the date-driven switch
+  reach statically generated pages. Don't remove it.
+- `name@moacademy.com` logins, `profiles.avatar_color`, and course card colours
+  are **not** branding — leave them on the year-round values.
+- `npm run test:brand` covers the SAST month boundaries; `NEXT_PUBLIC_BRAND`
+  pins an identity for out-of-season screenshots.
+- Regenerate seasonal art with `npm run brand:assets` (needs a `npm run build`
+  first so `next/font` has cached Poppins).
+
 ## Architecture conventions
 
 - **Runs with no backend.** Server data comes from `src/lib/data` (Supabase →

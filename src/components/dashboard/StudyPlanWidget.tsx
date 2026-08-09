@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { Widget } from "@/components/ui/Widget";
 import { Button } from "@/components/ui/Button";
-import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
+import { BrandMarkIcon } from "@/components/brand/BrandMark";
 import { useLocalCollection } from "@/lib/local-store";
 import type { Registration } from "@/lib/billing/registration";
 import type { PlanDay } from "@/app/api/plan/route";
 import type { Assignment, Course } from "@/lib/types";
 import { relativeTime } from "@/lib/utils";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 const PLAN_KEY = "moacademy.studyplan";
 
@@ -38,6 +39,7 @@ export function StudyPlanWidget({
   upcoming: Assignment[];
   courses: Course[];
 }) {
+  const brand = useBrand();
   const [plan, setPlan] = useState<StoredPlan | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -127,8 +129,8 @@ export function StudyPlanWidget({
 
   return (
     <Widget
-      title="Mo's study plan"
-      icon={<MoMarkIcon className="h-4 w-auto" />}
+      title={`${brand.assistant}'s study plan`}
+      icon={<BrandMarkIcon className="h-4 w-auto" />}
       action={
         plan ? (
           <button
@@ -144,7 +146,7 @@ export function StudyPlanWidget({
       {!plan ? (
         <div className="flex flex-col items-center gap-3 py-4 text-center">
           <p className="text-sm text-ink-muted">
-            Mo can plan your week around your real deadlines
+            {brand.assistant} can plan your week around your real deadlines
             {weakTopics.length > 0 && " — and the topics your quizzes say need work"}
             .
           </p>

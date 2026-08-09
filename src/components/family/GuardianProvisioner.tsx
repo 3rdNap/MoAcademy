@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Check, Copy, ShieldCheck, X } from "lucide-react";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 const DONE_KEY = "moacademy.guardian.provisioned";
 
@@ -23,6 +24,7 @@ interface ProvisionResult {
  * silent no-op. Safe when guardian accounts aren't configured (503 → ignored).
  */
 export function GuardianProvisioner() {
+  const brand = useBrand();
   const [creds, setCreds] = useState<{ email: string; password: string } | null>(
     null,
   );
@@ -67,7 +69,7 @@ export function GuardianProvisioner() {
     if (!creds) return;
     try {
       await navigator.clipboard.writeText(
-        `MoAcademy family login\nEmail: ${creds.email}\nTemporary password: ${creds.password}`,
+        `${brand.name} family login\nEmail: ${creds.email}\nTemporary password: ${creds.password}`,
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);

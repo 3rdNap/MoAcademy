@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { DEFAULT_ASSISTANT_MODEL } from "@/lib/assistant";
+import { getBrand } from "@/lib/brand";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
   const count = Math.min(Math.max(Number(body.count) || 5, 3), 10);
 
   const system =
-    "You write practice quizzes for MoAcademy students (South African " +
+    `You write practice quizzes for ${getBrand().name} students (South African ` +
     "high-school level unless the topic implies otherwise). Respond with " +
     "ONLY a JSON array — no prose, no code fences. Each element: " +
     '{"q": string, "options": [4 strings], "answer": 0-3, "explain": string}. ' +
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
     const questions = validate(raw);
     if (!questions) {
       return NextResponse.json(
-        { error: "Mo couldn't build that quiz — try a more specific topic." },
+        { error: `${getBrand().assistant} couldn't build that quiz — try a more specific topic.` },
         { status: 502 },
       );
     }

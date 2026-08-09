@@ -13,7 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import Link from "next/link";
-import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
+import { BrandMarkIcon } from "@/components/brand/BrandMark";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -34,6 +34,7 @@ import {
 import { seedGuides, type StudyGuide } from "@/lib/study-guides";
 import { subjects } from "@/lib/billing/subjects";
 import type { Registration } from "@/lib/billing/registration";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 const MAX_PDF = 3 * 1024 * 1024;
 const MAX_THUMB = 1.5 * 1024 * 1024;
@@ -66,6 +67,7 @@ function gradientFor(text: string): string {
 }
 
 export function StudyGuidesBoard() {
+  const brand = useBrand();
   const { role, hydrated } = useRole();
   const manage = hydrated && isAdmin(role);
 
@@ -343,9 +345,9 @@ export function StudyGuidesBoard() {
                           <Link
                             href={`/assistant?topic=${encodeURIComponent(`the "${g.title}" study guide (${g.subject})`)}`}
                             className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/10 px-2.5 text-xs font-semibold text-ink-muted hover:bg-surface-subtle hover:text-ink dark:border-white/10"
-                            title="Ask Mo about this guide"
+                            title={`Ask ${brand.assistant} about this guide`}
                           >
-                            <MoMarkIcon className="h-3 w-auto" /> Ask Mo
+                            <BrandMarkIcon className="h-3 w-auto" /> Ask {brand.assistant}
                           </Link>
                           {href ? (
                             <a

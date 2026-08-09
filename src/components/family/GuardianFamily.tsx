@@ -14,6 +14,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { daysUntil, formatDate, formatDateTime } from "@/lib/utils";
 import type { Announcement, Assignment, Course } from "@/lib/types";
 import type { GuardianChild } from "@/lib/data";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 export interface ChildView {
   child: GuardianChild;
@@ -29,6 +30,7 @@ export interface ChildView {
  * FamilyDashboard, which uses seeded siblings and grade math.
  */
 export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) {
+  const brand = useBrand();
   const [childId, setChildId] = useState(childrenData[0]?.child.id ?? "");
   const current =
     childrenData.find((c) => c.child.id === childId) ?? childrenData[0];
@@ -43,7 +45,7 @@ export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) 
         <div className="card flex flex-col items-start gap-2 p-6">
           <p className="font-semibold text-ink">No linked students yet</p>
           <p className="text-sm text-ink-muted">
-            When your child adds you to their MoAcademy account, they&apos;ll
+            When your child adds you to their {brand.name} account, they&apos;ll
             appear here with their courses and deadlines.
           </p>
         </div>

@@ -14,6 +14,41 @@
   --surface-sunken: 238 240 246; /* inputs / hover */
   --scrollbar: #cbd2e0;
   color-scheme: light;
+
+  /* MoAcademy brand scale — the sky blue of the "mo" mark. */
+  --brand-50: 240 249 255;
+  --brand-100: 224 242 254;
+  --brand-200: 186 230 253;
+  --brand-300: 125 211 252;
+  --brand-400: 56 182 255; /* #38b6ff — the logo blue */
+  --brand-500: 24 164 251;
+  --brand-600: 2 132 199;
+  --brand-700: 3 105 161;
+  --brand-800: 7 89 133;
+  --brand-900: 12 74 110;
+  --brand-950: 8 47 73;
+}
+
+/*
+ * Women's Month (August, South Africa) — the WoAcademy lilac, keyed off the
+ * "wo" mark's own #E2A9F1. Applied as a class on <html> by the root layout, so
+ * every brand-* utility in the app re-tints at once. The mid tones are pitched
+ * for contrast, not just hue: brand-600 lands at 4.92:1 on white (the blue it
+ * replaces manages 4.10:1), so button and link text reads better in August
+ * than it does the rest of the year.
+ */
+.womens-month {
+  --brand-50: 252 244 255;
+  --brand-100: 248 232 254;
+  --brand-200: 241 212 251;
+  --brand-300: 234 190 246;
+  --brand-400: 226 169 241; /* #E2A9F1 — the logo lilac */
+  --brand-500: 200 116 227;
+  --brand-600: 167 66 201;
+  --brand-700: 139 47 168;
+  --brand-800: 114 39 137;
+  --brand-900: 92 33 112;
+  --brand-950: 59 16 73;
 }
 
 .dark {

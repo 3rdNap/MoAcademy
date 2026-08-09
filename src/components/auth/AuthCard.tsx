@@ -6,10 +6,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Label, Select } from "@/components/ui/form";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 /** Shared sign-in / sign-up form. mode controls which flow it runs. */
 export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
   const router = useRouter();
+  const brand = useBrand();
   const isSignup = mode === "signup";
 
   const [name, setName] = useState("");
@@ -80,13 +82,13 @@ export function AuthCard({ mode }: { mode: "signin" | "signup" }) {
         <div className="mb-5 flex flex-col items-center text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white p-2 ring-1 ring-black/10 dark:ring-white/10">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/mo-mark.png" alt="MoAcademy" className="h-full w-full object-contain" />
+            <img src={brand.mark} alt={brand.name} className="h-full w-full object-contain" />
           </span>
           <h1 className="mt-3 text-xl font-bold text-ink">
             {isSignup ? "Create your account" : "Welcome back"}
           </h1>
           <p className="text-sm text-ink-muted">
-            {isSignup ? "Join MoAcademy" : "Sign in to MoAcademy"}
+            {isSignup ? `Join ${brand.name}` : `Sign in to ${brand.name}`}
           </p>
         </div>
 

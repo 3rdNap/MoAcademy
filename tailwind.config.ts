@@ -11,19 +11,21 @@ const config: Config = {
     extend: {
       colors: {
         // MoAcademy brand — the sky blue of the "mo" logo mark (#38b6ff),
-        // scaled from tint to a deep navy for the nav rail.
+        // scaled from tint to a deep navy for the nav rail. CSS variables
+        // rather than fixed hex so August can swap the whole scale to the
+        // WoAcademy lilac for Women's Month (see globals.css .womens-month).
         brand: {
-          50: "#f0f9ff",
-          100: "#e0f2fe",
-          200: "#bae6fd",
-          300: "#7dd3fc",
-          400: "#38b6ff",
-          500: "#18a4fb",
-          600: "#0284c7",
-          700: "#0369a1",
-          800: "#075985",
-          900: "#0c4a6e",
-          950: "#082f49",
+          50: "rgb(var(--brand-50) / <alpha-value>)",
+          100: "rgb(var(--brand-100) / <alpha-value>)",
+          200: "rgb(var(--brand-200) / <alpha-value>)",
+          300: "rgb(var(--brand-300) / <alpha-value>)",
+          400: "rgb(var(--brand-400) / <alpha-value>)",
+          500: "rgb(var(--brand-500) / <alpha-value>)",
+          600: "rgb(var(--brand-600) / <alpha-value>)",
+          700: "rgb(var(--brand-700) / <alpha-value>)",
+          800: "rgb(var(--brand-800) / <alpha-value>)",
+          900: "rgb(var(--brand-900) / <alpha-value>)",
+          950: "rgb(var(--brand-950) / <alpha-value>)",
         },
         accent: {
           DEFAULT: "#10b6a3",

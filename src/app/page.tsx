@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getBrand, type Brand } from "@/lib/brand";
 import {
   ArrowRight,
   BookOpen,
@@ -9,11 +10,11 @@ import {
   Users,
 } from "lucide-react";
 
-export const metadata = {
-  title: "MoAcademy — Smart Learning",
-};
+export function generateMetadata() {
+  return { title: `${getBrand().name} — Smart Learning` };
+}
 
-const FEATURES = [
+const features = (brand: Brand) => [
   {
     icon: BookOpen,
     title: "Courses that feel familiar",
@@ -21,8 +22,8 @@ const FEATURES = [
   },
   {
     icon: Sparkles,
-    title: "Mo, your AI tutor",
-    body: "Ask anything, any time. Mo knows your courses and study guides, explains step by step, quizzes you, and searches the web when you need fresh facts.",
+    title: `${brand.assistant}, your AI tutor`,
+    body: `Ask anything, any time. ${brand.assistant} knows your courses and study guides, explains step by step, quizzes you, and searches the web when you need fresh facts.`,
   },
   {
     icon: Library,
@@ -47,13 +48,15 @@ const FEATURES = [
 ];
 
 export default function LandingPage() {
+  const brand = getBrand();
+
   return (
     <div className="min-h-screen bg-surface text-ink">
       {/* Header */}
       <header className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
         <div className="flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/mo-mark.png" alt="mo" className="h-7 w-auto" />
+          <img src={brand.mark} alt={brand.assistant.toLowerCase()} className="h-7 w-auto" />
           <span aria-hidden className="h-9 w-px bg-ink/70" />
           <span className="flex flex-col justify-center gap-[3px] font-display">
             <span className="text-xl font-extrabold leading-none tracking-tight">
@@ -83,14 +86,14 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="mx-auto max-w-6xl px-4 pb-16 pt-12 text-center sm:px-6 sm:pt-20">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/mo-mark.png" alt="" className="mx-auto h-16 w-auto sm:h-20" />
+        <img src={brand.mark} alt="" className="mx-auto h-16 w-auto sm:h-20" />
         <h1 className="mx-auto mt-6 max-w-3xl font-display text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
           Smart Learning for every student
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-base text-ink-muted sm:text-lg">
-          MoAcademy brings your courses, study guides, university plans and an
-          AI tutor named Mo into one place — built for students, instructors
-          and parents.
+          {brand.name} brings your courses, study guides, university plans and an
+          AI tutor named {brand.assistant} into one place — built for students,
+          instructors and parents.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link
@@ -111,7 +114,7 @@ export default function LandingPage() {
       {/* Features */}
       <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((f) => {
+          {features(brand).map((f) => {
             const Icon = f.icon;
             return (
               <div

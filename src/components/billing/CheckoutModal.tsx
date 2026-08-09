@@ -17,6 +17,7 @@ import {
   type Registration,
   type RegistrationLine,
 } from "@/lib/billing/registration";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 const methods: { id: PaymentMethod; icon: typeof CreditCard }[] = [
   { id: "card", icon: CreditCard },
@@ -43,6 +44,7 @@ export function CheckoutModal({
   defaultEmail: string;
   onPaid: (reg: Registration) => void;
 }) {
+  const brand = useBrand();
   const [name, setName] = useState(defaultName);
   const [email, setEmail] = useState(defaultEmail);
   const [method, setMethod] = useState<PaymentMethod>("card");
@@ -229,7 +231,7 @@ export function CheckoutModal({
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
               <p>
                 You&apos;ll pay securely on PayFast (card, Instant EFT and more).
-                Your card details never touch MoAcademy.
+                Your card details never touch {brand.name}.
                 {payfast.sandbox && (
                   <span className="font-semibold"> Sandbox test mode — no real money moves.</span>
                 )}

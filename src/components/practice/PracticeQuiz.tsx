@@ -5,12 +5,13 @@ import { ArrowRight, CheckCircle2, RotateCcw, Trophy, XCircle } from "lucide-rea
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { MoMarkIcon } from "@/components/layout/MoMarkIcon";
+import { BrandMarkIcon } from "@/components/brand/BrandMark";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import { seedGuides, type StudyGuide } from "@/lib/study-guides";
 import type { Registration } from "@/lib/billing/registration";
 import type { QuizQuestion } from "@/app/api/quiz/route";
 import { cn, formatDate } from "@/lib/utils";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 interface QuizResult {
   id: string;
@@ -23,6 +24,7 @@ interface QuizResult {
 type Stage = "setup" | "loading" | "quiz" | "done";
 
 export function PracticeQuiz() {
+  const brand = useBrand();
   const [stage, setStage] = useState<Stage>("setup");
   const [topic, setTopic] = useState("");
   const [count, setCount] = useState(5);
@@ -115,14 +117,14 @@ export function PracticeQuiz() {
     <>
       <PageHeader
         title="Practice"
-        subtitle="Mo writes a fresh quiz on any topic — instant marking, with explanations that teach."
+        subtitle={`${brand.assistant} writes a fresh quiz on any topic — instant marking, with explanations that teach.`}
       />
 
       {stage === "setup" && (
         <div className="mx-auto max-w-2xl space-y-6">
           <div className="card p-6">
             <div className="flex items-center gap-3">
-              <MoMarkIcon className="h-8 w-auto shrink-0" />
+              <BrandMarkIcon className="h-8 w-auto shrink-0" />
               <div>
                 <h2 className="font-semibold text-ink">What shall we practise?</h2>
                 <p className="text-sm text-ink-muted">
@@ -209,9 +211,9 @@ export function PracticeQuiz() {
 
       {stage === "loading" && (
         <div className="mx-auto flex max-w-2xl flex-col items-center gap-4 py-20 text-center">
-          <MoMarkIcon className="h-10 w-auto animate-pulse" />
+          <BrandMarkIcon className="h-10 w-auto animate-pulse" />
           <p className="text-sm text-ink-muted">
-            Mo is writing your quiz on <span className="font-semibold text-ink">{topic}</span>…
+            {brand.assistant} is writing your quiz on <span className="font-semibold text-ink">{topic}</span>…
           </p>
         </div>
       )}
