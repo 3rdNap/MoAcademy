@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import {
   Calendar,
+  ClipboardList,
   Compass,
   CreditCard,
   GraduationCap,
@@ -9,9 +10,13 @@ import {
   LayoutGrid,
   Library,
   ListChecks,
+  ShieldCheck,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { BrandMarkIcon } from "@/components/brand/BrandMark";
+import { AREA_HREF, ROLE_AREAS, type AreaKey } from "./access";
+import type { Role } from "./types";
 
 /** Lucide icons and the logo-mark icon both fit this shape. */
 export type NavIcon =
@@ -27,19 +32,30 @@ export interface GlobalNavItem {
   onMobileBar?: boolean;
 }
 
-/** Canvas-style global navigation rail items. */
-export const globalNav: GlobalNavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: Home, onMobileBar: true },
-  { label: "Courses", href: "/courses", icon: LayoutGrid, onMobileBar: true },
-  { label: "Study Guides", href: "/study-guides", icon: Library },
-  { label: "Assistant", href: "/assistant", icon: BrandMarkIcon, onMobileBar: true },
-  { label: "Practice", href: "/practice", icon: ListChecks },
-  { label: "Roadmap", href: "/roadmap", icon: Compass, onMobileBar: true },
-  { label: "Calendar", href: "/calendar", icon: Calendar, onMobileBar: true },
-  { label: "Inbox", href: "/inbox", icon: Inbox, badgeKey: "inbox" },
-  { label: "Grades", href: "/grades", icon: GraduationCap },
-  { label: "Billing", href: "/billing", icon: CreditCard },
-];
+/** Nav presentation for each area; the route policy lives in lib/access.ts. */
+const AREA_NAV: Record<AreaKey, Omit<GlobalNavItem, "href">> = {
+  dashboard: { label: "Dashboard", icon: Home, onMobileBar: true },
+  family: { label: "Family", icon: Users, onMobileBar: true },
+  work: { label: "Schoolwork", icon: ClipboardList, onMobileBar: true },
+  admin: { label: "Admin", icon: ShieldCheck },
+  courses: { label: "Courses", icon: LayoutGrid, onMobileBar: true },
+  guides: { label: "Study Guides", icon: Library },
+  assistant: { label: "Assistant", icon: BrandMarkIcon, onMobileBar: true },
+  practice: { label: "Practice", icon: ListChecks },
+  roadmap: { label: "Roadmap", icon: Compass, onMobileBar: true },
+  calendar: { label: "Calendar", icon: Calendar, onMobileBar: true },
+  inbox: { label: "Inbox", icon: Inbox, badgeKey: "inbox" },
+  grades: { label: "Grades", icon: GraduationCap },
+  billing: { label: "Billing", icon: CreditCard },
+};
+
+/** The global navigation rail, as this role should see it. */
+export function navFor(role: Role): GlobalNavItem[] {
+  return ROLE_AREAS[role].map((key) => ({
+    ...AREA_NAV[key],
+    href: AREA_HREF[key],
+  }));
+}
 
 export interface CourseNavItem {
   label: string;

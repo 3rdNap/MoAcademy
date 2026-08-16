@@ -404,3 +404,99 @@ export async function fetchRecentRemoteAnnouncements(
     return null;
   }
 }
+
+/* ------------------------------ submissions ------------------------------ */
+
+export interface RemoteSubmission {
+  assignmentId: string;
+  status: "not_started" | "in_progress" | "submitted" | "graded" | "late" | "missing";
+  score: number | null;
+  submittedAt: string | null;
+  body: string;
+  attachmentName: string | null;
+}
+
+interface SubmissionRow {
+  assignment_id: string;
+  status: RemoteSubmission["status"];
+  score: number | null;
+  submitted_at: string | null;
+  body: string | null;
+  attachment_name: string | null;
+}
+
+const mapSubmissionRow = (r: SubmissionRow): RemoteSubmission => ({
+  assignmentId: r.assignment_id,
+  status: r.status ?? "not_started",
+  score: r.score,
+  submittedAt: r.submitted_at,
+  body: r.body ?? "",
+  attachmentName: r.attachment_name,
+});
+
+/**
+ * The signed-in student's own submissions for a set of assignments. Null when
+ * offline or before migration 0020, which tells the board to keep using its
+ * local copy rather than wrongly showing everything as un-submitted.
+ */
+export async function fetchMySubmissions(
+  assignmentIds: string[],
+): Promise<RemoteSubmission[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase || assignmentIds.length === 0) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("submissions")
+      .select("assignment_id, status, score, submitted_at, body, attachment_name")
+      .eq("user_id", user.id)
+      .in("assignment_id", assignmentIds);
+    if (error || !data) return null;
+    return (data as unknown as SubmissionRow[]).map(mapSubmissionRow);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hand work in (or revise it) for one assignment, so it is visible on every
+ * device — to the student, to whoever teaches them, and to a linked guardian.
+ * Null when refused: not signed in, already graded, or not yet migrated.
+ */
+export async function saveMySubmission(input: {
+  assignmentId: string;
+  body: string;
+  attachmentName?: string;
+}): Promise<RemoteSubmission | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return null;
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("submissions")
+      .upsert(
+        {
+          assignment_id: input.assignmentId,
+          user_id: user.id,
+          status: "submitted",
+          body: input.body,
+          attachment_name: input.attachmentName ?? null,
+          submitted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "assignment_id,user_id" },
+      )
+      .select("assignment_id, status, score, submitted_at, body, attachment_name")
+      .single();
+    if (error || !data) return null;
+    return mapSubmissionRow(data as unknown as SubmissionRow);
+  } catch {
+    return null;
+  }
+}

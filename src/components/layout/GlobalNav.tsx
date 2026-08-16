@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MoreHorizontal, ShieldCheck, Users, X } from "lucide-react";
-import { globalNav, type GlobalNavItem } from "@/lib/nav";
+import { MoreHorizontal, X } from "lucide-react";
+import { navFor, type GlobalNavItem } from "@/lib/nav";
 import { useRole } from "@/components/role/RoleProvider";
-import { isAdmin, isParent } from "@/lib/role";
 import { cn } from "@/lib/utils";
 import { useBrand } from "@/components/brand/BrandProvider";
 
@@ -26,16 +25,10 @@ export function GlobalNav() {
     setMoreOpen(false);
   }, [pathname]);
 
-  // Role-specific entries (surfaced after hydration to avoid a mismatch).
-  const familyItem: GlobalNavItem = { label: "Family", href: "/family", icon: Users };
-  const adminItem: GlobalNavItem = { label: "Admin", href: "/admin", icon: ShieldCheck };
-  const items: GlobalNavItem[] = !hydrated
-    ? globalNav
-    : isParent(role)
-      ? [globalNav[0], familyItem, ...globalNav.slice(1)]
-      : isAdmin(role)
-        ? [globalNav[0], adminItem, ...globalNav.slice(1)]
-        : globalNav;
+  // Each role gets its own navigation (src/lib/access.ts). Before hydration we
+  // render the student set, which is the widest common shape, then settle to
+  // the real one — the server also blocks anything this role may not reach.
+  const items: GlobalNavItem[] = navFor(hydrated ? role : "student");
 
   const isActive = (href: string) =>
     href === "/dashboard"

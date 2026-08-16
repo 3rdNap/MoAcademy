@@ -13,9 +13,12 @@ import { canTeach } from "@/lib/role";
 import { useLocalCollection, newId } from "@/lib/local-store";
 import {
   addRemoteAssignment,
+  fetchMySubmissions,
   fetchRemoteAssignments,
   removeRemoteAssignment,
+  saveMySubmission,
   updateRemoteAssignment,
+  type RemoteSubmission,
 } from "@/lib/course-content-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
 import { itemIcon } from "@/lib/itemMeta";
@@ -103,6 +106,20 @@ export function CourseAssignmentsBoard({
     };
   }, [course.id]);
 
+  // Submissions live in the database for signed-in students (migration 0020),
+  // so handing work in is visible on every device — and to a linked guardian,
+  // who otherwise had no way to know whether anything had been submitted. The
+  // browser copy stays as the fallback for the no-backend demo.
+  const [remoteSubs, setRemoteSubs] = useState<RemoteSubmission[] | null>(null);
+  const assignmentIds = useMemo(() => (remote ?? []).map((a) => a.id), [remote]);
+  useEffect(() => {
+    let alive = true;
+    fetchMySubmissions(assignmentIds).then((r) => alive && setRemoteSubs(r));
+    return () => {
+      alive = false;
+    };
+  }, [assignmentIds]);
+
   /** "Draft with Mo": generate the student-facing description server-side. */
   async function draftWithMo() {
     if (!draft.title.trim() || aiBusy) return;
@@ -135,8 +152,20 @@ export function CourseAssignmentsBoard({
     }
   }
 
-  const submissionFor = (aid: string) =>
-    submissions.items.find((s) => s.id === aid);
+  const submissionFor = (aid: string): Submission | undefined => {
+    const server = remoteSubs?.find((s) => s.assignmentId === aid);
+    if (server) {
+      return {
+        id: server.assignmentId,
+        body: server.body,
+        fileName: server.attachmentName ?? undefined,
+        submittedAt: server.submittedAt ?? "",
+      };
+    }
+    // With a server list in hand, "no row" genuinely means not submitted; the
+    // local copy is only consulted when there is no server list at all.
+    return remoteSubs ? undefined : submissions.items.find((s) => s.id === aid);
+  };
 
   function effectiveStatus(a: Assignment): SubmissionStatus {
     if (a.status === "graded") return "graded";
@@ -150,17 +179,36 @@ export function CourseAssignmentsBoard({
     setSubFile(existing?.fileName);
   }
 
-  function submitWork() {
+  async function submitWork() {
     if (!submitFor) return;
-    const existing = submissionFor(submitFor.id);
+    const assignmentId = submitFor.id;
     const record: Submission = {
-      id: submitFor.id,
+      id: assignmentId,
       body: subBody.trim(),
       fileName: subFile,
       submittedAt: new Date().toISOString(),
     };
-    if (existing) submissions.update(submitFor.id, record);
-    else submissions.add(record);
+
+    const saved = await saveMySubmission({
+      assignmentId,
+      body: record.body,
+      attachmentName: subFile,
+    });
+    if (saved) {
+      setRemoteSubs((prev) => [
+        ...(prev ?? []).filter((s) => s.assignmentId !== assignmentId),
+        saved,
+      ]);
+    } else {
+      // Offline, or the write side isn't migrated yet — keep it locally so the
+      // demo still works end to end.
+      if (submissions.items.some((s) => s.id === assignmentId)) {
+        submissions.update(assignmentId, record);
+      } else {
+        submissions.add(record);
+      }
+    }
+
     setSubmitFor(null);
     setSubBody("");
     setSubFile(undefined);

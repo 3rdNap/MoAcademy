@@ -225,6 +225,106 @@ export async function getChildCourses(childId: string): Promise<Course[]> {
   }
 }
 
+export type SubmissionStatus =
+  | "not_started"
+  | "in_progress"
+  | "submitted"
+  | "graded"
+  | "late"
+  | "missing";
+
+export interface SubmissionRecord {
+  assignmentId: string;
+  status: SubmissionStatus;
+  score: number | null;
+  submittedAt: string | null;
+  body: string;
+}
+
+/**
+ * A user's submissions, keyed by assignment id. RLS decides whose rows come
+ * back: your own, your linked child's (guardians, migration 0017), or any when
+ * teaching. Returns an empty map if the write side hasn't been migrated yet
+ * (0020), so callers fall back to "not submitted" rather than breaking.
+ */
+export const getSubmissions = cache(
+  async (userId: string): Promise<Map<string, SubmissionRecord>> => {
+    const out = new Map<string, SubmissionRecord>();
+    const supabase = await createSupabaseServerClient();
+    if (!supabase || !userId) return out;
+    try {
+      const { data, error } = await supabase
+        .from("submissions")
+        .select("assignment_id, status, score, submitted_at, body")
+        .eq("user_id", userId);
+      if (error) return out;
+      for (const row of data ?? []) {
+        out.set(row.assignment_id as string, {
+          assignmentId: row.assignment_id as string,
+          status: (row.status as SubmissionStatus) ?? "not_started",
+          score: (row.score as number | null) ?? null,
+          submittedAt: (row.submitted_at as string | null) ?? null,
+          body: (row.body as string) ?? "",
+        });
+      }
+    } catch {
+      /* submissions write side not migrated yet */
+    }
+    return out;
+  },
+);
+
+/** How an assignment stands for one student — what a guardian needs to see. */
+export interface WorkItem {
+  assignment: Assignment;
+  courseName: string;
+  courseCode: string;
+  courseColor: string;
+  status: SubmissionStatus;
+  score: number | null;
+  submittedAt: string | null;
+  /** Past its due date with nothing handed in. */
+  overdue: boolean;
+}
+
+/**
+ * Every published assignment across `courses`, paired with this student's
+ * submission state and sorted by due date. The guardian's Schoolwork view and
+ * the child summary both read from here, so "submitted / not submitted" means
+ * the same thing in both places.
+ */
+export async function getWorkFor(
+  userId: string,
+  courses: Course[],
+  now = new Date(),
+): Promise<WorkItem[]> {
+  if (courses.length === 0) return [];
+  const byId = new Map(courses.map((c) => [c.id, c]));
+  const [assignments, submissions] = await Promise.all([
+    getAssignmentsForCourses(courses.map((c) => c.id)),
+    getSubmissions(userId),
+  ]);
+
+  return assignments
+    .map((assignment) => {
+      const course = byId.get(assignment.courseId);
+      const sub = submissions.get(assignment.id);
+      const status: SubmissionStatus = sub?.status ?? "not_started";
+      const handedIn = status === "submitted" || status === "graded";
+      return {
+        assignment,
+        courseName: course?.name ?? "",
+        courseCode: course?.code ?? "",
+        courseColor: course?.color ?? "#0284c7",
+        status,
+        score: sub?.score ?? null,
+        submittedAt: sub?.submittedAt ?? null,
+        overdue: !handedIn && new Date(assignment.dueAt) < now,
+      };
+    })
+    .sort((a, b) => +new Date(a.assignment.dueAt) - +new Date(b.assignment.dueAt));
+}
+
 /** Published assignments across a set of course ids (course_key), soonest first. */
 export async function getAssignmentsForCourses(
   courseIds: string[],

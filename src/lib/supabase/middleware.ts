@@ -1,6 +1,8 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasSupabaseEnv, supabaseAnonKey, supabaseUrl } from "./env";
+import { canAccess, homeFor } from "@/lib/access";
+import { isRole } from "@/lib/role";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -54,6 +56,35 @@ export async function updateSession(request: NextRequest) {
       target.pathname = "/account/set-password";
       target.search = "";
       return NextResponse.redirect(target);
+    }
+  }
+
+  // Role scoping. Every role has its own set of areas (src/lib/access.ts), and
+  // a hidden nav link is not access control — a guardian who types /billing or
+  // /practice must be turned away here, on the server, not merely fail to find
+  // the link. Anonymous visitors keep the full demo tour.
+  if (user) {
+    const { pathname } = request.nextUrl;
+    const skip =
+      pathname.startsWith("/api") ||
+      pathname.startsWith("/_next") ||
+      pathname.startsWith("/logout") ||
+      pathname.startsWith("/account/set-password");
+
+    if (!skip) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      const role = isRole(profile?.role) ? profile.role : "student";
+
+      if (!canAccess(role, pathname)) {
+        const target = request.nextUrl.clone();
+        target.pathname = homeFor(role);
+        target.search = "";
+        return NextResponse.redirect(target);
+      }
     }
   }
 
