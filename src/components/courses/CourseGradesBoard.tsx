@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
@@ -8,6 +8,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { useRole } from "@/components/role/RoleProvider";
 import { canTeach } from "@/lib/role";
 import { useLocalCollection } from "@/lib/local-store";
+import { fetchCourseMarks, saveMark, type MarkRow } from "@/lib/course-content-db";
 import { roster } from "@/lib/roster";
 import { formatDate, initialsOf, letterGrade } from "@/lib/utils";
 import type { Assignment, Course } from "@/lib/types";
@@ -24,15 +25,24 @@ export interface GradebookStudent {
   avatarColor: string;
 }
 
+/** What was actually recorded for the signed-in student, by assignment id. */
+export type MyMarks = Record<
+  string,
+  { score: number | null; status: string }
+> | null;
+
 export function CourseGradesBoard({
   course,
   seed,
   students,
+  myMarks = null,
 }: {
   course: Course;
   seed: Assignment[];
   /** The enrolled class; `null` falls back to the demo roster. */
   students?: GradebookStudent[] | null;
+  /** The viewer's own marks; `null` falls back to the seed status. */
+  myMarks?: MyMarks;
 }) {
   const { role, hydrated } = useRole();
   const teaching = hydrated && canTeach(role);
@@ -51,7 +61,13 @@ export function CourseGradesBoard({
   );
 
   if (!teaching) {
-    return <StudentGrades course={course} assignments={assignments} />;
+    return (
+      <StudentGrades
+        course={course}
+        assignments={assignments}
+        myMarks={myMarks}
+      />
+    );
   }
   return (
     <InstructorGradebook
@@ -71,14 +87,21 @@ export function CourseGradesBoard({
 function StudentGrades({
   course,
   assignments,
+  myMarks,
 }: {
   course: Course;
   assignments: Assignment[];
+  myMarks: MyMarks;
 }) {
-  const graded = assignments.filter(
-    (a) => a.status === "graded" && a.score != null,
-  );
-  const earned = graded.reduce((n, a) => n + (a.score ?? 0), 0);
+  // Prefer what was recorded for this student; the assignment's own status is
+  // only meaningful in the anonymous demo, where nobody has submissions.
+  const scoreOf = (a: Assignment) =>
+    myMarks ? myMarks[a.id]?.score ?? null : a.score ?? null;
+  const statusOf = (a: Assignment) =>
+    myMarks ? myMarks[a.id]?.status ?? "not_started" : a.status;
+
+  const graded = assignments.filter((a) => scoreOf(a) != null);
+  const earned = graded.reduce((n, a) => n + (scoreOf(a) ?? 0), 0);
   const possible = graded.reduce((n, a) => n + a.points, 0);
   const pct = possible ? Math.round((earned / possible) * 100) : 0;
 
@@ -118,16 +141,20 @@ function StudentGrades({
                 <td className="px-4 py-3 font-medium text-ink">{a.title}</td>
                 <td className="px-4 py-3 text-ink-muted">{formatDate(a.dueAt)}</td>
                 <td className="px-4 py-3">
-                  {a.status === "graded" ? (
+                  {statusOf(a) === "graded" ? (
                     <Badge tone="success">Graded</Badge>
-                  ) : a.status === "missing" ? (
+                  ) : statusOf(a) === "missing" ? (
                     <Badge tone="danger">Missing</Badge>
+                  ) : statusOf(a) === "submitted" ? (
+                    <Badge tone="info">Submitted</Badge>
                   ) : (
                     <Badge tone="neutral">Pending</Badge>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right font-medium text-ink">
-                  {a.score != null ? `${a.score}/${a.points}` : `—/${a.points}`}
+                  {scoreOf(a) != null
+                    ? `${scoreOf(a)}/${a.points}`
+                    : `—/${a.points}`}
                 </td>
               </tr>
             ))}
@@ -154,21 +181,71 @@ function InstructorGradebook({
     [],
   );
 
-  const cellId = (sid: string, aid: string) => `${sid}__${aid}`;
-  const getScore = (sid: string, aid: string) =>
-    grades.items.find((g) => g.id === cellId(sid, aid))?.score;
+  // Marks belong in the database: a score entered here is what the student's
+  // own grade page and their guardian's view read (0020). The browser copy is
+  // the fallback for the no-backend demo, where there are no real students to
+  // mark anyway.
+  const [marks, setMarks] = useState<MarkRow[] | null>(null);
+  const assignmentIds = useMemo(() => assignments.map((a) => a.id), [assignments]);
+  useEffect(() => {
+    let alive = true;
+    fetchCourseMarks(assignmentIds).then((m) => alive && setMarks(m));
+    return () => {
+      alive = false;
+    };
+  }, [assignmentIds]);
 
-  function setScore(sid: string, aid: string, raw: string, points: number) {
+  const cellId = (sid: string, aid: string) => `${sid}__${aid}`;
+
+  const getScore = useCallback(
+    (sid: string, aid: string): number | undefined => {
+      if (marks) {
+        return (
+          marks.find((m) => m.studentId === sid && m.assignmentId === aid)
+            ?.score ?? undefined
+        );
+      }
+      return grades.items.find((g) => g.id === cellId(sid, aid))?.score;
+    },
+    [marks, grades.items],
+  );
+
+  async function setScore(sid: string, aid: string, raw: string, points: number) {
     const id = cellId(sid, aid);
+    const cleared = raw === "";
+    const score = cleared
+      ? null
+      : Math.max(0, Math.min(points, Number(raw)));
+    if (score != null && Number.isNaN(score)) return;
+
+    if (marks) {
+      // Optimistic: the cell should respond as fast as it's typed in.
+      setMarks((prev) => [
+        ...(prev ?? []).filter(
+          (m) => !(m.studentId === sid && m.assignmentId === aid),
+        ),
+        {
+          assignmentId: aid,
+          studentId: sid,
+          score,
+          status: score == null ? "submitted" : "graded",
+        },
+      ]);
+      const ok = await saveMark({ assignmentId: aid, studentId: sid, score });
+      if (ok) return;
+      // The write was refused — reload rather than leave a mark on screen
+      // that was never actually recorded.
+      fetchCourseMarks(assignmentIds).then(setMarks);
+      return;
+    }
+
     const existing = grades.items.find((g) => g.id === id);
-    if (raw === "") {
+    if (cleared) {
       if (existing) grades.remove(id);
       return;
     }
-    const score = Math.max(0, Math.min(points, Number(raw)));
-    if (Number.isNaN(score)) return;
-    if (existing) grades.update(id, { score });
-    else grades.add({ id, score });
+    if (existing) grades.update(id, { score: score as number });
+    else grades.add({ id, score: score as number });
   }
 
   function studentPct(sid: string) {

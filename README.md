@@ -198,7 +198,11 @@ While previewing a teaching role, instructors can **author course content**:
   own grade table, while instructors get an editable class gradebook (students ×
   assignments) with auto-saving score cells, per-student totals, and per-
   assignment class averages. The rows are the **real enrolled class** when
-  signed in (see [Class rosters](#class-rosters)).
+  signed in (see [Class rosters](#class-rosters)), and a score entered here is
+  written to `public.submissions` — so **one mark is read by all three**: the
+  instructor who set it, the student on their own grade page, and that
+  student's guardian. Clearing a cell returns the work to *submitted* so it can
+  be marked again.
 
 Authored content is layered on top of the seed data and persists per course in
 the browser (`moacademy.authoring.*`, `moacademy.gradebook.*`); students see it

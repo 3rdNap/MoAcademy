@@ -500,3 +500,76 @@ export async function saveMySubmission(input: {
     return null;
   }
 }
+
+/** One student's mark for one assignment, as the gradebook holds it. */
+export interface MarkRow {
+  assignmentId: string;
+  studentId: string;
+  score: number | null;
+  status: RemoteSubmission["status"];
+}
+
+/**
+ * Every student's submission for a set of assignments — the teaching read.
+ * RLS (0020) only answers this for instructors and admins; null means offline,
+ * not migrated, or not a teaching account, and the gradebook then keeps using
+ * its local copy.
+ */
+export async function fetchCourseMarks(
+  assignmentIds: string[],
+): Promise<MarkRow[] | null> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase || assignmentIds.length === 0) return null;
+  try {
+    const { data, error } = await supabase
+      .from("submissions")
+      .select("assignment_id, user_id, score, status")
+      .in("assignment_id", assignmentIds);
+    if (error || !data) return null;
+    return (data as unknown as {
+      assignment_id: string;
+      user_id: string;
+      score: number | null;
+      status: RemoteSubmission["status"];
+    }[]).map((r) => ({
+      assignmentId: r.assignment_id,
+      studentId: r.user_id,
+      score: r.score,
+      status: r.status ?? "not_started",
+    }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Record (or clear) a mark. Writing a score marks the work graded, which is
+ * what the student's own grade page and their guardian's view both read;
+ * clearing it returns the row to submitted so it can be marked again.
+ *
+ * Only a teaching account can satisfy the policy that permits a score, so this
+ * returns false for anyone else rather than silently doing nothing.
+ */
+export async function saveMark(input: {
+  assignmentId: string;
+  studentId: string;
+  score: number | null;
+}): Promise<boolean> {
+  const supabase = createSupabaseBrowserClient();
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from("submissions").upsert(
+      {
+        assignment_id: input.assignmentId,
+        user_id: input.studentId,
+        score: input.score,
+        status: input.score == null ? "submitted" : "graded",
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "assignment_id,user_id" },
+    );
+    return !error;
+  } catch {
+    return false;
+  }
+}

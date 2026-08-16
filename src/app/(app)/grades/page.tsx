@@ -58,8 +58,27 @@ export default async function GradesPage() {
 
   const courses = await getCourses();
 
+  // A signed-in student's standing comes from their own marked submissions —
+  // the same rows the instructor's gradebook writes and their guardian reads,
+  // so all three see one number. The anonymous demo has no submissions, so it
+  // falls back to the seed assignments' own graded status.
+  const myWork =
+    auth.authed && auth.userId ? await getWorkFor(auth.userId, courses) : null;
+
   const rows = await Promise.all(
     courses.map(async (course) => {
+      if (myWork) {
+        const marked = myWork.filter(
+          (w) => w.assignment.courseId === course.id && w.score != null,
+        );
+        const earned = marked.reduce((n, w) => n + (w.score ?? 0), 0);
+        const possible = marked.reduce((n, w) => n + w.assignment.points, 0);
+        return {
+          course,
+          graded: marked.length,
+          pct: possible ? Math.round((earned / possible) * 100) : null,
+        };
+      }
       const assignments = await getAssignments(course.id);
       const graded = assignments.filter(
         (a) => a.status === "graded" && a.score != null,
