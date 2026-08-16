@@ -90,6 +90,43 @@ roadmap data stored server-side per student.
 A **"Viewing as"** switcher in the top bar previews the app as a **Student**,
 **Instructor**, **Admin**, or **Parent** (Canvas-style Student View).
 
+Each role gets its **own designated home and its own navigation**, defined once
+in `src/lib/access.ts`:
+
+| Role | Home | Sees |
+| --- | --- | --- |
+| **Student** | `/dashboard` | Courses · Study Guides · Assistant · Practice · Roadmap · Calendar · Inbox · Grades · Billing |
+| **Instructor** | `/dashboard` | Courses · Study Guides · Assistant · Calendar · Inbox · Grades |
+| **Admin** | `/dashboard` | Admin · Courses · Study Guides · Assistant · Calendar · Inbox · Grades · Billing |
+| **Parent** | `/family` | Family · Schoolwork · Grades · Calendar · Inbox · Roadmap |
+
+Instructors don't get Billing or the University Roadmap (both belong to a
+student personally); guardians get neither the study tools nor the authoring
+ones. **A hidden nav link is not access control**, so the same table is enforced
+three ways: the nav renders `navFor(role)`, `src/lib/supabase/middleware.ts`
+redirects real accounts away from areas their role can't reach, and
+`RoleRouteGuard` covers the anonymous demo (where the role is a client-side
+preview) and role switching. `npm run test:access` checks every role against
+every area, including that a prefix can't leak a sibling route.
+
+### Guardians see, but never touch
+
+The parent view is **read-only by construction** — there is no create, edit,
+delete or submit control anywhere in it:
+
+- **Family** — each child's subjects, current grade, deadlines and announcements.
+- **Schoolwork** — every assignment set, and whether it's been **handed in**,
+  is **still to do** or is **overdue**, with the mark once it's given.
+- **Grades** — each subject's standing, computed from the child's marked work.
+- **Calendar** — the child's deadlines (no personal events, no "Add event").
+- **Roadmap** — how far along each university application is, and what closes soon.
+- **Inbox** — messages with their child's teachers.
+
+This is enforced in the database, not just the UI. Guardians hold `select` and
+only `select` on their linked child's submissions and roadmap (migrations 0017,
+0020, 0021) — a parent who calls the API directly still can't hand work in,
+change a mark, or withdraw an application.
+
 ### Admin console
 
 Previewing as **Admin** reveals an **Admin** entry in the global nav (and a

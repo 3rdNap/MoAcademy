@@ -325,6 +325,48 @@ export async function getWorkFor(
     .sort((a, b) => +new Date(a.assignment.dueAt) - +new Date(b.assignment.dueAt));
 }
 
+export interface ChildApplication {
+  id: string;
+  institution: string;
+  program: string | null;
+  closesAt: string | null;
+  applyUrl: string | null;
+  status: string;
+}
+
+/**
+ * A linked child's university applications (migration 0021 lets a guardian
+ * read them; only the student may write). Empty when the roadmap tables
+ * haven't been migrated, so the family view degrades to an explanation rather
+ * than an error.
+ */
+export async function getChildApplications(
+  childId: string,
+): Promise<ChildApplication[]> {
+  const { authed, role } = await getAuthState();
+  if (!authed || role !== "parent") return [];
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("roadmap_applications")
+      .select("id, institution, program, closes_at, apply_url, status")
+      .eq("user_id", childId)
+      .order("closes_at", { nullsFirst: false });
+    if (error) return [];
+    return (data ?? []).map((r) => ({
+      id: r.id as string,
+      institution: (r.institution as string) ?? "",
+      program: (r.program as string | null) ?? null,
+      closesAt: (r.closes_at as string | null) ?? null,
+      applyUrl: (r.apply_url as string | null) ?? null,
+      status: (r.status as string) ?? "not_started",
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /** Published assignments across a set of course ids (course_key), soonest first. */
 export async function getAssignmentsForCourses(
   courseIds: string[],

@@ -2,12 +2,60 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Badge } from "@/components/ui/Badge";
-import { getAssignments, getCourses } from "@/lib/data";
+import {
+  getAssignments,
+  getAuthState,
+  getChildCourses,
+  getCourses,
+  getGuardianChildren,
+  getWorkFor,
+} from "@/lib/data";
+import { ChildGrades, type ChildGradesView } from "@/components/family/ChildGrades";
 import { letterGrade } from "@/lib/utils";
 
 export const metadata = { title: "Grades" };
 
 export default async function GradesPage() {
+  const auth = await getAuthState();
+
+  // Guardians see their children's standing, computed from marked submissions
+  // rather than from their own (empty) enrolment.
+  if (auth.authed && auth.role === "parent") {
+    const children = await getGuardianChildren();
+    const views: ChildGradesView[] = await Promise.all(
+      children.map(async (child) => {
+        const childCourses = await getChildCourses(child.id);
+        const work = await getWorkFor(child.id, childCourses);
+        const subjects = childCourses.map((course) => {
+          const marked = work.filter(
+            (w) => w.assignment.courseId === course.id && w.score != null,
+          );
+          const earned = marked.reduce((n, w) => n + (w.score ?? 0), 0);
+          const possible = marked.reduce((n, w) => n + w.assignment.points, 0);
+          return {
+            courseId: course.id,
+            name: course.name,
+            code: course.code,
+            color: course.color,
+            pct: possible ? Math.round((earned / possible) * 100) : null,
+            marked: marked.length,
+          };
+        });
+        const scored = subjects.filter((s) => s.pct != null);
+        return {
+          child,
+          subjects,
+          overall: scored.length
+            ? Math.round(
+                scored.reduce((n, s) => n + (s.pct ?? 0), 0) / scored.length,
+              )
+            : null,
+        };
+      }),
+    );
+    return <ChildGrades views={views} />;
+  }
+
   const courses = await getCourses();
 
   const rows = await Promise.all(

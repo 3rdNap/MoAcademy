@@ -1,6 +1,7 @@
 import { GlobalNav } from "./GlobalNav";
 import { TopBar } from "./TopBar";
 import { RoleProvider } from "@/components/role/RoleProvider";
+import { RoleRouteGuard } from "@/components/role/RoleRouteGuard";
 import { getAuthState, getCourses, getCurrentUser } from "@/lib/data";
 
 /**
@@ -17,6 +18,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <RoleProvider authedRole={auth.authed ? auth.role : null}>
+      <RoleRouteGuard />
       {/* First focusable element: keyboard/screen-reader users can jump
           straight past the nav to the page content. */}
       <a

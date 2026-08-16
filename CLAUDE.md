@@ -54,6 +54,25 @@ Africa's Women's Month. Rules when touching anything brand-shaped:
 - Regenerate seasonal art with `npm run brand:assets` (needs a `npm run build`
   first so `next/font` has cached Poppins).
 
+## Roles: separate dashboards, and read-only guardians
+
+- `src/lib/access.ts` is the single source of truth for which areas a role may
+  use, which is its home, and whether it may write. Add a route to `AREA_HREF`
+  and to the roles that should reach it — don't gate pages ad hoc.
+- Keep `access.ts` free of React imports: middleware runs on the Edge runtime
+  and imports it. Icons live in `nav.ts`.
+- Enforcement is in three places and all three must agree: `navFor()` (what's
+  shown), `middleware.ts` (real accounts, server-side), and `RoleRouteGuard`
+  (the anonymous demo and role switching). Hiding a link is never enough.
+- **Guardians are read-only, in the database as well as the UI.** They hold
+  `select` and only `select` on a linked child's submissions and roadmap
+  (0017/0020/0021). Never add a write path for `parent`.
+- Student work and roadmap applications are server-side now (`submissions`,
+  `roadmap_applications`); the localStorage copies are only a no-backend
+  fallback. Don't reintroduce browser-only storage for anything a parent or
+  instructor is meant to see.
+- `npm run test:access` covers the role/route matrix.
+
 ## Architecture conventions
 
 - **Runs with no backend.** Server data comes from `src/lib/data` (Supabase →

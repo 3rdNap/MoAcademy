@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CalendarClock,
   ExternalLink,
@@ -16,6 +16,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { useLocalCollection, newId } from "@/lib/roadmap/store";
+import {
+  addMyApplication,
+  fetchMyApplications,
+  removeMyApplication,
+  updateMyApplication,
+} from "@/lib/roadmap-db";
 import { seedApplications } from "@/lib/roadmap/seed";
 import { deadlineState } from "@/lib/roadmap/deadline";
 import { formatDate } from "@/lib/utils";
@@ -52,7 +58,21 @@ export function ApplicationsBoard() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [uploadNote, setUploadNote] = useState("");
 
-  const sorted = [...items].sort((a, b) => {
+  // Applications are stored server-side for signed-in students (0002 + 0021),
+  // so they survive a change of device and a linked guardian can see whether
+  // the applications are actually in. The browser copy remains the fallback
+  // for the no-backend demo.
+  const [remote, setRemote] = useState<ApplicationEntry[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchMyApplications().then((r) => alive && setRemote(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const entries = remote ?? items;
+  const sorted = [...entries].sort((a, b) => {
     const av = a.closesAt ? +new Date(a.closesAt) : Infinity;
     const bv = b.closesAt ? +new Date(b.closesAt) : Infinity;
     return av - bv;
@@ -70,18 +90,41 @@ export function ApplicationsBoard() {
     setOpen(true);
   }
 
-  function save() {
+  async function save() {
     if (!draft.institution?.trim()) return;
-    if (draft.id) {
-      update(draft.id, draft);
-    } else {
-      add({
-        ...(draft as ApplicationEntry),
-        id: newId(),
-        status: draft.status ?? "not_started",
-      });
+    const entry: ApplicationEntry = {
+      ...(draft as ApplicationEntry),
+      id: draft.id ?? newId(),
+      status: draft.status ?? "not_started",
+    };
+
+    if (remote) {
+      const saved = draft.id
+        ? await updateMyApplication(entry)
+        : await addMyApplication(entry);
+      if (saved) {
+        setRemote((prev) => {
+          const rest = (prev ?? []).filter((a) => a.id !== saved.id);
+          return draft.id
+            ? (prev ?? []).map((a) => (a.id === saved.id ? saved : a))
+            : [...rest, saved];
+        });
+        setOpen(false);
+        return;
+      }
     }
+
+    if (draft.id) update(draft.id, draft);
+    else add(entry);
     setOpen(false);
+  }
+
+  async function removeEntry(id: string) {
+    if (remote && (await removeMyApplication(id))) {
+      setRemote((prev) => (prev ?? []).filter((a) => a.id !== id));
+      return;
+    }
+    remove(id);
   }
 
   function onFile(file?: File) {
@@ -174,7 +217,7 @@ export function ApplicationsBoard() {
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => remove(a.id)}
+                      onClick={() => removeEntry(a.id)}
                       className="focus-ring rounded-md p-1.5 text-ink-faint hover:bg-rose-50 hover:text-rose-600"
                       aria-label="Delete"
                     >

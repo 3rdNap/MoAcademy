@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "test:brand": "node --experimental-strip-types scripts/brand.test.mts",
-    "brand:assets": "python3 scripts/generate-brand-assets.py"
+    "brand:assets": "python3 scripts/generate-brand-assets.py",
+    "test:access": "node --experimental-strip-types scripts/access.test.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",

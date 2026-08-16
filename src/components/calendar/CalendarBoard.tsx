@@ -41,9 +41,16 @@ const emptyDraft: Draft = { title: "", at: "", type: "event" };
 export function CalendarBoard({
   seedEvents,
   courses,
+  readOnly = false,
+  title = "Calendar",
+  subtitle,
 }: {
   seedEvents: CalendarEvent[];
   courses: Course[];
+  /** Guardians follow a child's schedule without adding to it. */
+  readOnly?: boolean;
+  title?: string;
+  subtitle?: string;
 }) {
   const personal = useLocalCollection<CalendarEvent>(
     "moacademy.calendar.events",
@@ -76,9 +83,12 @@ export function CalendarBoard({
   const allEvents = useMemo(
     () => [
       ...seedEvents.map((e) => ({ e, local: false })),
-      ...personal.items.map((e) => ({ e, local: true })),
+      // In read-only mode nothing is "local": a guardian is looking at the
+      // child's schedule, so their own events don't belong here — and with no
+      // local rows the per-event edit/delete controls never render either.
+      ...(readOnly ? [] : personal.items.map((e) => ({ e, local: true }))),
     ],
-    [seedEvents, personal.items],
+    [seedEvents, personal.items, readOnly],
   );
 
   const grouped = useMemo(() => {
@@ -169,8 +179,11 @@ export function CalendarBoard({
   return (
     <>
       <PageHeader
-        title="Calendar"
-        subtitle="Everything due across your courses, plus your own events."
+        title={title}
+        subtitle={
+          subtitle ??
+          "Everything due across your courses, plus your own events."
+        }
         action={
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg border border-black/10 p-0.5 dark:border-white/10">
@@ -190,9 +203,11 @@ export function CalendarBoard({
                 </button>
               ))}
             </div>
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4" /> Add event
-            </Button>
+            {!readOnly && (
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4" /> Add event
+              </Button>
+            )}
           </div>
         }
       />
@@ -305,16 +320,18 @@ export function CalendarBoard({
               {(eventsByDay.get(selectedDay) ?? []).length === 0 ? (
                 <div className="card flex items-center justify-between p-4 text-sm text-ink-muted">
                   Nothing on this day.
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setDraft({ ...emptyDraft, at: `${selectedDay}T09:00` });
-                      setOpen(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" /> Add event
-                  </Button>
+                  {!readOnly && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setDraft({ ...emptyDraft, at: `${selectedDay}T09:00` });
+                        setOpen(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" /> Add event
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div className="card divide-y divide-black/5">
