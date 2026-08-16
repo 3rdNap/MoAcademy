@@ -219,18 +219,29 @@ function InstructorGradebook({
     if (score != null && Number.isNaN(score)) return;
 
     if (marks) {
-      // Optimistic: the cell should respond as fast as it's typed in.
-      setMarks((prev) => [
-        ...(prev ?? []).filter(
-          (m) => !(m.studentId === sid && m.assignmentId === aid),
-        ),
-        {
-          assignmentId: aid,
-          studentId: sid,
-          score,
-          status: score == null ? "submitted" : "graded",
-        },
-      ]);
+      // Optimistic: the cell should respond as fast as it's typed in. Keep the
+      // rest of the row (the work itself) so marking never blanks a submission.
+      setMarks((prev) => {
+        const rows = prev ?? [];
+        const existing = rows.find(
+          (m) => m.studentId === sid && m.assignmentId === aid,
+        );
+        return [
+          ...rows.filter(
+            (m) => !(m.studentId === sid && m.assignmentId === aid),
+          ),
+          {
+            body: "",
+            attachmentName: null,
+            submittedAt: null,
+            ...existing,
+            assignmentId: aid,
+            studentId: sid,
+            score,
+            status: (score == null ? "submitted" : "graded") as MarkRow["status"],
+          },
+        ];
+      });
       const ok = await saveMark({ assignmentId: aid, studentId: sid, score });
       if (ok) return;
       // The write was refused — reload rather than leave a mark on screen

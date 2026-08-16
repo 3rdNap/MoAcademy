@@ -21,6 +21,10 @@ import {
   type RemoteSubmission,
 } from "@/lib/course-content-db";
 import { getSignedInUserId } from "@/lib/study-guides-db";
+import {
+  SubmissionsReview,
+  type ReviewStudent,
+} from "@/components/courses/SubmissionsReview";
 import { itemIcon } from "@/lib/itemMeta";
 import { formatDateTime, relativeTime } from "@/lib/utils";
 import type { Assignment, Course, SubmissionStatus } from "@/lib/types";
@@ -66,9 +70,12 @@ const emptyDraft: Draft = {
 export function CourseAssignmentsBoard({
   course,
   seed,
+  students = [],
 }: {
   course: Course;
   seed: Assignment[];
+  /** The enrolled class, for the teaching submissions review. */
+  students?: ReviewStudent[];
 }) {
   const brand = useBrand();
   const { role, hydrated } = useRole();
@@ -89,6 +96,7 @@ export function CourseAssignmentsBoard({
   const [submitFor, setSubmitFor] = useState<Assignment | null>(null);
   const [subBody, setSubBody] = useState("");
   const [subFile, setSubFile] = useState<string | undefined>();
+  const [reviewFor, setReviewFor] = useState<Assignment | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiNote, setAiNote] = useState<string | null>(null);
   const [pubNote, setPubNote] = useState<string | null>(null);
@@ -387,6 +395,15 @@ export function CourseAssignmentsBoard({
                     {sub ? "Resubmit" : "Submit"}
                   </Button>
                 )}
+                {teaching && students.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setReviewFor(a)}
+                  >
+                    Review
+                  </Button>
+                )}
                 {teaching &&
                   (source === "local" || (source === "remote" && signedIn)) && (
                   <div className="flex gap-1">
@@ -553,6 +570,14 @@ export function CourseAssignmentsBoard({
           </p>
         </div>
       </Modal>
+
+      {reviewFor && (
+        <SubmissionsReview
+          assignment={reviewFor}
+          students={students}
+          onClose={() => setReviewFor(null)}
+        />
+      )}
     </>
   );
 }

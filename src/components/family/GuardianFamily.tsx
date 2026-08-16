@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   BookOpen,
   CalendarClock,
+  ClipboardList,
   Megaphone,
   UserRound,
 } from "lucide-react";
@@ -65,6 +67,14 @@ export function GuardianFamily({ childrenData }: { childrenData: ChildView[] }) 
       <PageHeader
         title="Family"
         subtitle="Follow your child's progress, courses and deadlines."
+        action={
+          <Link
+            href="/family/work"
+            className="focus-ring inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand-600 px-3 text-sm font-semibold text-white hover:bg-brand-700"
+          >
+            <ClipboardList className="h-4 w-4" /> Schoolwork
+          </Link>
+        }
       />
 
       {/* Child selector (only when a guardian follows more than one child). */}

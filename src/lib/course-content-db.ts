@@ -501,12 +501,16 @@ export async function saveMySubmission(input: {
   }
 }
 
-/** One student's mark for one assignment, as the gradebook holds it. */
+/** One student's submission for one assignment, as teaching views hold it. */
 export interface MarkRow {
   assignmentId: string;
   studentId: string;
   score: number | null;
   status: RemoteSubmission["status"];
+  /** The work itself — what the student actually wrote. */
+  body: string;
+  attachmentName: string | null;
+  submittedAt: string | null;
 }
 
 /**
@@ -523,7 +527,9 @@ export async function fetchCourseMarks(
   try {
     const { data, error } = await supabase
       .from("submissions")
-      .select("assignment_id, user_id, score, status")
+      .select(
+        "assignment_id, user_id, score, status, body, attachment_name, submitted_at",
+      )
       .in("assignment_id", assignmentIds);
     if (error || !data) return null;
     return (data as unknown as {
@@ -531,11 +537,17 @@ export async function fetchCourseMarks(
       user_id: string;
       score: number | null;
       status: RemoteSubmission["status"];
+      body: string | null;
+      attachment_name: string | null;
+      submitted_at: string | null;
     }[]).map((r) => ({
       assignmentId: r.assignment_id,
       studentId: r.user_id,
       score: r.score,
       status: r.status ?? "not_started",
+      body: r.body ?? "",
+      attachmentName: r.attachment_name,
+      submittedAt: r.submitted_at,
     }));
   } catch {
     return null;
